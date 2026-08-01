@@ -92,6 +92,13 @@ export interface BackgroundImageState {
   rotation: 0 | 90 | 180 | 270
 }
 
+export type WordLanguage = 'en' | 'ko' | 'ja' | 'zh'
+
+export interface WordGuide {
+  language: WordLanguage
+  text: string
+}
+
 export interface HistorySnapshot {
   done: Stroke[]
   undone: Stroke[]
@@ -106,6 +113,7 @@ export interface ProjectSnapshot {
   height: number
   background: string
   backgroundImage?: BackgroundImageState
+  wordGuide?: WordGuide
   layers?: DrawingLayer[]
   activeLayerId?: string
   history: HistorySnapshot

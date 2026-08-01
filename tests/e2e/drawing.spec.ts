@@ -113,10 +113,17 @@ test('switches brushes, changes size, zooms and starts a clean drawing', async (
   })
   expect(storedBrush).toMatchObject({ tool: 'marker', size: 42 })
 
+  const zoomControls = page.locator('.zoom-controls')
+  await expect(zoomControls).toHaveCSS('opacity', '0')
   const beforeZoom = await page.locator('.zoom-badge').textContent()
-  await page.getByTestId('zoom-in-button').click()
+  await canvas.hover()
+  await page.mouse.wheel(0, -420)
+  await expect(zoomControls).toHaveClass(/is-visible/)
+  await expect(zoomControls).toHaveCSS('opacity', '1')
   await expect(page.locator('.zoom-badge')).not.toHaveText(beforeZoom ?? '')
   await page.getByTestId('fit-button').click()
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await expect(zoomControls).toHaveCSS('opacity', '0', { timeout: 4_000 })
 
   await page.getByTestId('new-drawing-button').click()
   await expect(page.getByTestId('undo-button')).toBeDisabled()
@@ -128,6 +135,77 @@ test('switches brushes, changes size, zooms and starts a clean drawing', async (
   await expect(page.getByTestId('brush-size')).toHaveValue('42')
   await expect(page.getByTestId('brush-opacity')).toHaveValue('37')
   await expect(page.getByRole('button', { name: '색상 #d64b3c' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('collapses mobile tools into a bookmark and refits the canvas', async ({ page }) => {
+  await page.goto('/')
+  const toggle = page.getByTestId('tool-dock-toggle')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  const beforeWorkspace = await page.locator('.workspace').boundingBox()
+  if (!beforeWorkspace) throw new Error('Workspace has no bounding box')
+
+  await page.getByTestId('tool-pencil').click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false', { timeout: 4_000 })
+  await expect(page.locator('.toolbar')).toBeHidden()
+  const afterWorkspace = await page.locator('.workspace').boundingBox()
+  if (!afterWorkspace) throw new Error('Collapsed workspace has no bounding box')
+  expect(afterWorkspace.height).toBeGreaterThan(beforeWorkspace.height + 100)
+
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('.toolbar')).toBeVisible()
+  await expect(page.getByTestId('tool-pencil')).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('creates, saves and restores a drawable multilingual outline word', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('word-button').click()
+  await expect(page.locator('.toast')).toContainText(/단어 .*를 만들었어요/)
+  await expect(page.getByText('기기에 저장됨')).toBeVisible({ timeout: 7_000 })
+
+  const savedGuide = await page.evaluate(async () => {
+    const request = indexedDB.open('fingertip-drawing')
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const transaction = database.transaction('revisions', 'readonly')
+    const revisions = await new Promise<Array<{ status: string; createdAt: number; payload: { wordGuide?: { language: string; text: string } } }>>((resolve, reject) => {
+      const getAll = transaction.objectStore('revisions').getAll()
+      getAll.onsuccess = () => resolve(getAll.result)
+      getAll.onerror = () => reject(getAll.error)
+    })
+    database.close()
+    return revisions
+      .filter((revision) => revision.status === 'complete')
+      .sort((left, right) => right.createdAt - left.createdAt)[0]?.payload.wordGuide
+  })
+  expect(savedGuide?.language).toMatch(/^(en|ko|ja|zh)$/)
+  expect(savedGuide?.text.length).toBeGreaterThan(0)
+
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByTestId('export-button').click()
+  await page.getByRole('button', { name: 'PNG 만들기' }).click()
+  const download = await downloadPromise
+  const path = await download.path()
+  if (!path) throw new Error('Word guide export path is unavailable')
+  const image = PNG.sync.read(await import('node:fs').then(({ readFileSync }) => readFileSync(path)))
+  let outlinePixels = 0
+  for (let offset = 0; offset < image.data.length; offset += 4) {
+    if (image.data[offset] < 245 || image.data[offset + 1] < 245 || image.data[offset + 2] < 245) outlinePixels += 1
+  }
+  expect(outlinePixels).toBeGreaterThan(1_000)
+
+  await page.reload()
+  await expect(page.getByTestId('word-button')).toHaveAttribute('aria-label', new RegExp(savedGuide?.text ?? ''))
+  const canvas = page.getByTestId('drawing-canvas')
+  const box = await canvas.boundingBox()
+  if (!box) throw new Error('Canvas has no bounding box')
+  await page.mouse.move(box.x + box.width * 0.42, box.y + box.height * 0.5)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.58, box.y + box.height * 0.5, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.getByTestId('undo-button')).toBeEnabled()
 })
 
 test('migrates legacy tool preferences before the mobile UI becomes interactive', async ({ page }) => {

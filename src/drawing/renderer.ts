@@ -1,4 +1,4 @@
-import type { BackgroundImageState, DrawingLayer, ShapeTool, Stroke, ViewTransform } from './types'
+import type { BackgroundImageState, DrawingLayer, ShapeTool, Stroke, ViewTransform, WordGuide } from './types'
 
 export function clearCanvas(canvas: HTMLCanvasElement): void {
   const context = canvas.getContext('2d')
@@ -434,6 +434,44 @@ export function drawBackgroundImage(
   context.restore()
 }
 
+const wordFontFamilies: Record<WordGuide['language'], string> = {
+  en: 'Arial, Helvetica, sans-serif',
+  ko: '"Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
+  ja: '"Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif',
+  zh: '"PingFang SC", "Microsoft YaHei", sans-serif',
+}
+
+export function drawWordGuide(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  guide?: WordGuide,
+): void {
+  if (!guide?.text) return
+  const family = wordFontFamilies[guide.language]
+  const maximumWidth = width * 0.88
+  const maximumHeight = height * 0.66
+  let low = 24
+  let high = Math.max(low, height * 0.82)
+  for (let index = 0; index < 12; index += 1) {
+    const size = (low + high) / 2
+    context.font = `800 ${size}px ${family}`
+    if (context.measureText(guide.text).width <= maximumWidth && size <= maximumHeight) low = size
+    else high = size
+  }
+
+  context.save()
+  context.font = `800 ${low}px ${family}`
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+  context.lineJoin = 'round'
+  context.lineCap = 'round'
+  context.strokeStyle = 'rgba(82, 82, 76, 0.42)'
+  context.lineWidth = Math.max(5, low * 0.018)
+  context.strokeText(guide.text, width / 2, height / 2, maximumWidth)
+  context.restore()
+}
+
 export function drawViewport(
   display: HTMLCanvasElement,
   committed: HTMLCanvasElement,
@@ -443,6 +481,7 @@ export function drawViewport(
   dpr: number,
   backgroundImage?: CanvasImageSource | null,
   backgroundImageState?: BackgroundImageState,
+  wordGuide?: WordGuide,
 ): void {
   const context = display.getContext('2d')
   if (!context) return
@@ -469,6 +508,7 @@ export function drawViewport(
     )
   }
   context.shadowColor = 'transparent'
+  drawWordGuide(context, committed.width, committed.height, wordGuide)
   context.drawImage(committed, 0, 0)
   context.drawImage(preview, 0, 0)
   context.restore()
@@ -483,6 +523,7 @@ export function renderFullCanvas(
   backgroundImageState?: BackgroundImageState,
   scale = 1,
   layers?: readonly DrawingLayer[],
+  wordGuide?: WordGuide,
 ): HTMLCanvasElement {
   const artwork = document.createElement('canvas')
   artwork.width = width
@@ -503,6 +544,7 @@ export function renderFullCanvas(
   if (backgroundImage && backgroundImageState) {
     drawBackgroundImage(context, backgroundImage, width, height, backgroundImageState)
   }
+  drawWordGuide(context, width, height, wordGuide)
   context.drawImage(artwork, 0, 0)
   context.restore()
   return output

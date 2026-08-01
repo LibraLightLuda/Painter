@@ -2,7 +2,6 @@ import {
   fitTransform,
   persistView,
   preserveCenterOnResize,
-  restoreView,
   screenToCanvas,
   viewAroundGesture,
 } from './coordinates'
@@ -26,7 +25,9 @@ import {
   type ScreenPoint,
   type Stroke,
   type ViewTransform,
+  type WordGuide,
 } from './types'
+import { normalizeWordGuide } from '../words/randomWord'
 
 export interface DrawingState {
   canUndo: boolean
@@ -36,11 +37,13 @@ export interface DrawingState {
   brush: BrushSettings
   layers: DrawingLayer[]
   activeLayerId: string
+  wordGuide?: WordGuide
 }
 
 export interface DrawingChange {
   kind: 'content' | 'view' | 'state'
   state: DrawingState
+  source?: 'user' | 'automatic'
 }
 
 interface DrawingControllerOptions {
@@ -72,6 +75,10 @@ function stabilizedPoint(previous: Point, next: Point, amount: number): Point {
   }
 }
 
+function adaptiveFitPadding(width: number, height: number): number {
+  return Math.min(32, Math.max(8, Math.min(width, height) * 0.025))
+}
+
 export class DrawingController {
   private readonly history = new StrokeHistory(50)
   private readonly input = new InputMachine()
@@ -87,7 +94,7 @@ export class DrawingController {
   private frameId: number | null = null
   private settleTimer: number | null = null
   private disposed = false
-  private hasLoadedView = false
+  private autoFitView = true
   private documentWidth: number
   private documentHeight: number
   private documentBackground: string
@@ -109,6 +116,7 @@ export class DrawingController {
   private backgroundAsset: Blob | null = null
   private backgroundImage: CanvasImageSource | null = null
   private backgroundImageState: BackgroundImageState | undefined
+  private wordGuide: WordGuide | undefined
   private layers: DrawingLayer[] = [
     { id: 'layer-1', name: '그리기 1', visible: true, opacity: 1 },
   ]
@@ -205,14 +213,19 @@ export class DrawingController {
     this.canvas.width = Math.max(1, Math.round(width * this.dpr))
     this.canvas.height = Math.max(1, Math.round(height * this.dpr))
 
-    if (!oldWidth || !oldHeight) {
-      if (!this.hasLoadedView) {
-        this.view = fitTransform(this.documentWidth, this.documentHeight, width, height)
-      }
+    if (!oldWidth || !oldHeight || this.autoFitView) {
+      this.view = fitTransform(
+        this.documentWidth,
+        this.documentHeight,
+        width,
+        height,
+        adaptiveFitPadding(width, height),
+      )
     } else {
       this.view = preserveCenterOnResize(this.view, oldWidth, oldHeight, width, height)
     }
     this.requestRender()
+    this.emit('view', 'automatic')
   }
 
   async load(snapshot: ProjectSnapshot, backgroundAsset?: Blob): Promise<void> {
@@ -222,6 +235,7 @@ export class DrawingController {
     this.configureDocument(snapshot.width, snapshot.height, snapshot.background)
     this.documentId = snapshot.id
     await this.replaceBackgroundImage(backgroundAsset ?? null, snapshot.backgroundImage)
+    this.wordGuide = normalizeWordGuide(snapshot.wordGuide)
     this.layers = snapshot.layers?.length
       ? structuredClone(snapshot.layers)
       : [{ id: 'layer-1', name: '그리기 1', visible: true, opacity: 1 }]
@@ -231,28 +245,29 @@ export class DrawingController {
     this.history.restore(snapshot.history)
     this.replayLayers()
     clearCanvas(this.preview)
-    if (this.viewportWidth && this.viewportHeight) {
-      this.view = restoreView(snapshot.view, this.viewportWidth, this.viewportHeight)
-      this.hasLoadedView = true
-    }
+    this.autoFitView = true
+    if (this.viewportWidth && this.viewportHeight) this.fitToScreen(false)
     this.requestRender()
     this.emit('state')
   }
 
-  fitToScreen(): void {
+  fitToScreen(userInitiated = false): void {
     this.cancelActive()
+    this.autoFitView = true
     this.view = fitTransform(
       this.documentWidth,
       this.documentHeight,
       this.viewportWidth,
       this.viewportHeight,
+      adaptiveFitPadding(this.viewportWidth, this.viewportHeight),
     )
     this.requestRender()
-    this.emit('view')
+    this.emit('view', userInitiated ? 'user' : 'automatic')
   }
 
   zoomBy(factor: number, anchor?: Point): void {
     this.cancelActive()
+    this.autoFitView = false
     const focus = anchor ?? {
       x: this.viewportWidth / 2,
       y: this.viewportHeight / 2,
@@ -260,7 +275,7 @@ export class DrawingController {
     }
     this.view = viewAroundGesture(this.view, focus, focus, factor)
     this.requestRender()
-    this.emit('view')
+    this.emit('view', 'user')
   }
 
   setBrush(next: Partial<BrushSettings>): void {
@@ -289,6 +304,7 @@ export class DrawingController {
     this.releaseBackgroundImage()
     this.backgroundAsset = null
     this.backgroundImageState = undefined
+    this.wordGuide = normalizeWordGuide(snapshot.wordGuide)
     this.history.clear()
     this.layers = snapshot.layers?.length
       ? structuredClone(snapshot.layers)
@@ -297,8 +313,8 @@ export class DrawingController {
     this.currentStroke = null
     clearCanvas(this.committed)
     clearCanvas(this.preview)
-    this.hasLoadedView = false
-    this.fitToScreen()
+    this.autoFitView = true
+    this.fitToScreen(false)
     this.emit('content')
   }
 
@@ -334,6 +350,7 @@ export class DrawingController {
       height: this.documentHeight,
       background: this.documentBackground,
       backgroundImage: this.backgroundImageState ? { ...this.backgroundImageState } : undefined,
+      wordGuide: this.wordGuide ? { ...this.wordGuide } : undefined,
       layers: structuredClone(this.layers),
       activeLayerId: this.activeLayerId,
       history: this.history.serialize(),
@@ -371,6 +388,13 @@ export class DrawingController {
     this.emit('content')
   }
 
+  setWordGuide(guide: WordGuide): void {
+    this.cancelActive()
+    this.wordGuide = normalizeWordGuide(guide)
+    this.requestRender()
+    this.emit('content')
+  }
+
   getBackgroundAsset(): Blob | undefined {
     return this.backgroundAsset ?? undefined
   }
@@ -384,6 +408,7 @@ export class DrawingController {
       brush: { ...this.brush },
       layers: structuredClone(this.layers),
       activeLayerId: this.activeLayerId,
+      wordGuide: this.wordGuide ? { ...this.wordGuide } : undefined,
     }
   }
 
@@ -397,6 +422,7 @@ export class DrawingController {
       this.backgroundImageState,
       scale,
       this.layers,
+      this.wordGuide,
     )
   }
 
@@ -465,6 +491,7 @@ export class DrawingController {
           break
         }
         case 'begin-gesture': {
+          this.autoFitView = false
           this.gestureStartView = { ...this.view }
           this.interruptedStrokeId = committedId
           break
@@ -478,7 +505,7 @@ export class DrawingController {
             action.scaleFactor,
           )
           this.requestRender()
-          this.emit('view')
+          this.emit('view', 'user')
           break
         }
         case 'undo-gesture': {
@@ -550,6 +577,7 @@ export class DrawingController {
       this.dpr,
       this.backgroundImage,
       this.backgroundImageState,
+      this.wordGuide,
     )
   }
 
@@ -557,8 +585,8 @@ export class DrawingController {
     if (this.frameId === null) this.frameId = requestAnimationFrame(() => this.render())
   }
 
-  private emit(kind: DrawingChange['kind']): void {
-    this.options.onChange({ kind, state: this.getState() })
+  private emit(kind: DrawingChange['kind'], source?: DrawingChange['source']): void {
+    this.options.onChange({ kind, state: this.getState(), source })
   }
 
   addLayer(): void {

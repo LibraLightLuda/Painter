@@ -32,6 +32,7 @@ import {
   type StoredToolDetails,
   type StoredToolSettings,
 } from './preferences/toolSettings'
+import { createRandomWordGuide, WORD_LANGUAGE_LABELS } from './words/randomWord'
 
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -160,7 +161,12 @@ export default function App() {
   const [projects, setProjects] = useState<ProjectListEntry[]>([])
   const [activeProjectId, setActiveProjectId] = useState(DEFAULT_PROJECT_ID)
   const [layerSheetOpen, setLayerSheetOpen] = useState(false)
+  const [zoomFeedbackVisible, setZoomFeedbackVisible] = useState(false)
+  const [compactTools, setCompactTools] = useState(false)
+  const [toolDockCollapsed, setToolDockCollapsed] = useState(false)
   const projectFileRef = useRef<HTMLInputElement>(null)
+  const zoomFeedbackTimerRef = useRef<number | null>(null)
+  const toolDockTimerRef = useRef<number | null>(null)
 
   const refreshProjects = useCallback(async () => {
     const entries = await listRecentProjects()
@@ -173,12 +179,38 @@ export default function App() {
     window.setTimeout(() => setNotice((current) => (current === message ? '' : current)), 4_000)
   }, [])
 
+  const showZoomFeedback = useCallback(() => {
+    setZoomFeedbackVisible(true)
+    if (zoomFeedbackTimerRef.current !== null) window.clearTimeout(zoomFeedbackTimerRef.current)
+    zoomFeedbackTimerRef.current = window.setTimeout(() => setZoomFeedbackVisible(false), 1_600)
+  }, [])
+
+  const cancelToolDockTimer = useCallback(() => {
+    if (toolDockTimerRef.current !== null) window.clearTimeout(toolDockTimerRef.current)
+    toolDockTimerRef.current = null
+  }, [])
+
+  const scheduleToolDockCollapse = useCallback((delay = 2_200) => {
+    cancelToolDockTimer()
+    if (!compactTools) return
+    const collapseWhenIdle = () => {
+      if (controllerRef.current?.getState().inputMode !== 'idle') {
+        toolDockTimerRef.current = window.setTimeout(collapseWhenIdle, 600)
+        return
+      }
+      setToolDockCollapsed(true)
+      toolDockTimerRef.current = null
+    }
+    toolDockTimerRef.current = window.setTimeout(collapseWhenIdle, delay)
+  }, [cancelToolDockTimer, compactTools])
+
   const handleDrawingChange = useCallback((change: DrawingChange) => {
     setDrawingState(change.state)
-    if (readyRef.current && (change.kind === 'content' || change.kind === 'view')) {
+    if (change.kind === 'view' && change.source === 'user') showZoomFeedback()
+    if (readyRef.current && (change.kind === 'content' || (change.kind === 'view' && change.source === 'user'))) {
       autosaveRef.current?.markDirty()
     }
-  }, [])
+  }, [showZoomFeedback])
 
   const handleControllerReady = useCallback(
     async (controller: DrawingController) => {
@@ -254,6 +286,25 @@ export default function App() {
   }, [drawingState.brush.color, ready])
 
   useEffect(() => {
+    const media = window.matchMedia('(max-width: 720px), (max-height: 650px)')
+    const update = () => setCompactTools(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  useEffect(() => {
+    if (!compactTools) {
+      cancelToolDockTimer()
+      setToolDockCollapsed(false)
+      return
+    }
+    setToolDockCollapsed(false)
+    scheduleToolDockCollapse(5_000)
+    return cancelToolDockTimer
+  }, [cancelToolDockTimer, compactTools, scheduleToolDockCollapse])
+
+  useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
         controllerRef.current?.cancelActive()
@@ -312,11 +363,23 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return
       if (event.target instanceof HTMLInputElement) return
-      event.preventDefault()
-      if (event.shiftKey) controllerRef.current?.redo()
-      else controllerRef.current?.undo()
+      if (!(event.metaKey || event.ctrlKey)) return
+      const key = event.key.toLowerCase()
+      if (key === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) controllerRef.current?.redo()
+        else controllerRef.current?.undo()
+      } else if (key === '+' || key === '=') {
+        event.preventDefault()
+        controllerRef.current?.zoomBy(1.25)
+      } else if (key === '-') {
+        event.preventDefault()
+        controllerRef.current?.zoomBy(0.8)
+      } else if (key === '0') {
+        event.preventDefault()
+        controllerRef.current?.fitToScreen(true)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -340,6 +403,8 @@ export default function App() {
     () => () => {
       readyRef.current = false
       autosaveRef.current?.dispose()
+      if (zoomFeedbackTimerRef.current !== null) window.clearTimeout(zoomFeedbackTimerRef.current)
+      if (toolDockTimerRef.current !== null) window.clearTimeout(toolDockTimerRef.current)
     },
     [],
   )
@@ -358,29 +423,40 @@ export default function App() {
       opacity: toolOpacities[tool] ?? preset.opacity,
       ...toolDetails[tool],
     })
+    scheduleToolDockCollapse(1_800)
   }
 
   const handleBrushDetails = (next: Partial<ToolDetails>) => {
     const tool = drawingState.brush.tool
     setToolDetails((current) => ({ ...current, [tool]: { ...current[tool], ...next } }))
     controllerRef.current?.setBrush(next)
+    scheduleToolDockCollapse(2_800)
   }
 
   const handleBrushOpacity = (opacity: number) => {
     const tool = drawingState.brush.tool
     setToolOpacities((current) => ({ ...current, [tool]: opacity }))
     controllerRef.current?.setBrush({ opacity })
+    scheduleToolDockCollapse(2_800)
   }
 
   const handleColor = (color: string) => {
     controllerRef.current?.setBrush({ color })
     setRecentColors((current) => [color, ...current.filter((item) => item !== color)].slice(0, 12))
+    scheduleToolDockCollapse(2_200)
   }
 
   const handleBrushSize = (size: number) => {
     const tool = drawingState.brush.tool
     setToolSizes((current) => ({ ...current, [tool]: size }))
     controllerRef.current?.setBrush({ size })
+    scheduleToolDockCollapse(2_800)
+  }
+
+  const handleRandomWord = () => {
+    const guide = createRandomWordGuide()
+    controllerRef.current?.setWordGuide(guide)
+    announce(`${WORD_LANGUAGE_LABELS[guide.language]} 단어 “${guide.text}”를 만들었어요. 윤곽선을 따라 그려 보세요.`)
   }
 
   const handleNewDrawing = async () => {
@@ -619,6 +695,17 @@ export default function App() {
           )}
           <button
             type="button"
+            className="word-button"
+            onClick={handleRandomWord}
+            disabled={!ready}
+            aria-label={drawingState.wordGuide ? `새 랜덤 단어 만들기, 현재 ${drawingState.wordGuide.text}` : '랜덤 단어 만들기'}
+            data-testid="word-button"
+          >
+            <span aria-hidden="true">가</span>
+            <span>단어 만들기</span>
+          </button>
+          <button
+            type="button"
             className="new-button"
             onClick={() => void handleNewDrawing()}
             disabled={!ready}
@@ -654,7 +741,7 @@ export default function App() {
         >
           <CanvasSurface onReady={handleControllerReady} onChange={handleDrawingChange} />
           {!ready && <div className="loading-cover">최근 그림을 불러오는 중…</div>}
-          <div className="zoom-controls" aria-label="확대 및 축소">
+          <div className={`zoom-controls ${zoomFeedbackVisible ? 'is-visible' : ''}`} aria-label="확대 및 축소">
             <button
               type="button"
               onClick={() => controllerRef.current?.zoomBy(0.8)}
@@ -671,15 +758,41 @@ export default function App() {
             <button
               type="button"
               className="fit-button"
-              onClick={() => controllerRef.current?.fitToScreen()}
+              onClick={() => controllerRef.current?.fitToScreen(true)}
               aria-label="화면에 맞춤"
               data-testid="fit-button"
             >맞춤</button>
           </div>
         </div>
 
-        <div className="tool-dock">
-          <nav className="toolbar" aria-label="그리기 도구">
+        <div
+          className={`tool-dock ${compactTools && toolDockCollapsed ? 'is-collapsed' : ''}`}
+          onPointerDownCapture={cancelToolDockTimer}
+          onFocusCapture={cancelToolDockTimer}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) scheduleToolDockCollapse()
+          }}
+        >
+          {compactTools && (
+            <button
+              type="button"
+              className="tool-bookmark"
+              onClick={() => {
+                const next = !toolDockCollapsed
+                setToolDockCollapsed(next)
+                if (!next) scheduleToolDockCollapse(6_000)
+              }}
+              aria-expanded={!toolDockCollapsed}
+              aria-controls="drawing-tools"
+              aria-label={toolDockCollapsed ? '도구 메뉴 열기' : '도구 메뉴 접기'}
+              data-testid="tool-dock-toggle"
+            >
+              <span aria-hidden="true">{toolMeta[drawingState.brush.tool].glyph}</span>
+              <span>도구</span>
+              <span aria-hidden="true">{toolDockCollapsed ? '⌃' : '⌄'}</span>
+            </button>
+          )}
+          <nav id="drawing-tools" className="toolbar" aria-label="그리기 도구">
             {(Object.keys(toolMeta) as BrushTool[]).map((tool) => {
               const selected = drawingState.brush.tool === tool
               return (

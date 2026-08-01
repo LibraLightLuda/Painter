@@ -120,6 +120,7 @@ input:focus-visible {
 
 .save-pill,
 .quiet-button,
+.word-button,
 .new-button,
 .export-button {
   min-height: 44px;
@@ -147,6 +148,30 @@ input:focus-visible {
 .save-unsaved .status-dot { background: #b26925; }
 
 .quiet-button { padding: 0 14px; color: var(--ink); background: transparent; cursor: pointer; }
+.word-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 104px;
+  padding: 0 12px;
+  color: #263a31;
+  font-weight: 760;
+  border-color: #9eb9a9;
+  background: #dcecdf;
+  cursor: pointer;
+}
+.word-button:disabled { opacity: 0.5; cursor: wait; }
+.word-button > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  color: white;
+  font-size: 0.8rem;
+  border-radius: 8px 8px 3px 3px;
+  background: #39584a;
+}
 .new-button {
   display: flex;
   align-items: center;
@@ -234,6 +259,16 @@ input:focus-visible {
   background: rgba(247, 243, 234, 0.9);
   box-shadow: 0 4px 14px rgba(30, 31, 29, 0.12);
   backdrop-filter: blur(8px);
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.zoom-controls.is-visible,
+.zoom-controls:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 .zoom-controls button {
   min-width: 38px;
@@ -274,6 +309,7 @@ input:focus-visible {
 }
 
 .tool-dock {
+  position: relative;
   z-index: 4;
   display: grid;
   grid-template-rows: auto auto;
@@ -281,6 +317,7 @@ input:focus-visible {
   background: var(--paper);
   box-shadow: 0 -6px 22px rgba(30, 31, 29, 0.06);
 }
+.tool-bookmark { display: none; }
 .toolbar {
   display: flex;
   align-items: center;
@@ -683,6 +720,57 @@ input:focus-visible {
 @keyframes pulse { to { opacity: 0.35; } }
 @keyframes hint-out { to { opacity: 0; transform: translate(-50%, 6px); } }
 
+@media (max-width: 720px), (max-height: 650px) {
+  .tool-dock {
+    max-height: calc(160px + var(--safe-bottom));
+    overflow: visible;
+    transition: max-height 360ms cubic-bezier(.22, .8, .24, 1), border-color 180ms ease, box-shadow 180ms ease;
+  }
+  .tool-dock > .toolbar,
+  .tool-dock > .brush-controls {
+    transition: opacity 220ms ease, transform 360ms cubic-bezier(.22, .8, .24, 1), visibility 0s;
+  }
+  .tool-dock.is-collapsed {
+    max-height: 0;
+    border-top-color: transparent;
+    box-shadow: none;
+  }
+  .tool-dock.is-collapsed > .toolbar,
+  .tool-dock.is-collapsed > .brush-controls {
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(34px);
+    pointer-events: none;
+    transition: opacity 180ms ease, transform 340ms cubic-bezier(.4, 0, 1, 1), visibility 0s 340ms;
+  }
+  .tool-bookmark {
+    position: absolute;
+    left: 50%;
+    top: -32px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 92px;
+    min-height: 34px;
+    padding: 4px 10px 5px;
+    color: #f9f5ec;
+    font-size: 0.7rem;
+    font-weight: 760;
+    border: 1px solid rgba(255, 255, 255, 0.42);
+    border-bottom: 0;
+    border-radius: 13px 13px 2px 2px;
+    background: rgba(37, 43, 39, 0.92);
+    box-shadow: 0 -4px 15px rgba(30, 31, 29, 0.18);
+    backdrop-filter: blur(9px);
+    transform: translateX(-50%);
+    touch-action: manipulation;
+  }
+  .tool-bookmark > span:first-child { color: #ff8a66; font-size: 0.9rem; }
+  .tool-dock:not(.is-collapsed) .tool-bookmark { opacity: 0.72; }
+}
+
 @media (orientation: landscape) and (max-height: 600px), (min-width: 900px) {
   .tool-dock { grid-template-columns: minmax(390px, 1fr) minmax(420px, 1fr); grid-template-rows: auto; }
   .brush-controls {
@@ -704,6 +792,10 @@ input:focus-visible {
   .title-field input { padding-inline: 4px; }
   .title-field input { min-width: 0; }
   .quiet-button { display: none; }
+  .word-button { min-width: 60px; padding-inline: 7px; gap: 4px; }
+  .word-button > span:first-child { width: 23px; height: 23px; }
+  .word-button > span:last-child { font-size: 0; }
+  .word-button > span:last-child::after { content: "단어"; font-size: 0.7rem; }
   .export-button { min-width: 58px; padding-inline: 10px; }
   .new-button { min-width: 44px; padding-inline: 9px; }
   .new-button span:last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }

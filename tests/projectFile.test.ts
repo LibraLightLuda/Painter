@@ -5,6 +5,7 @@ describe('project file round trip', () => {
   it('preserves the snapshot and optional background image', async () => {
     const snapshot = createEmptySnapshot(123)
     snapshot.title = '백업 그림'
+    snapshot.wordGuide = { language: 'ko', text: '미소' }
     const background = new Blob(['image-bytes'], { type: 'image/png' })
     const file = await createProjectFile(snapshot, background)
     const restored = await readProjectFile(file)

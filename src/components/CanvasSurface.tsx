@@ -49,7 +49,7 @@ export function CanvasSurface({ onReady, onChange }: CanvasSurfaceProps) {
       <div className="canvas-hint" aria-hidden="true">
         <span>한 손가락으로 그리기</span>
         <span className="hint-dot">·</span>
-        <span>두 손가락 이동·확대 또는 ＋/−</span>
+        <span>두 손가락 이동·확대</span>
       </div>
     </div>
   )
