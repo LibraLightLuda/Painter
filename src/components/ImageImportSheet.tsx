@@ -16,7 +16,6 @@ interface ImageImportSheetProps {
     image: PreparedImage,
     mode: BackgroundImageState['mode'],
     rotation: BackgroundImageState['rotation'],
-    source?: 'external' | 'builtin',
   ) => Promise<void>
 }
 
@@ -102,7 +101,7 @@ export function ImageImportSheet({
       const response = await fetch(item.url)
       if (!response.ok) throw new Error(`내장 이미지를 받지 못했습니다 (${response.status}).`)
       const prepared = await prepareImage(await response.blob())
-      await onImport(prepared, 'fit', 0, 'builtin')
+      await onImport(prepared, 'fit', 0)
       onClose()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '내장 이미지를 불러오지 못했습니다.')
@@ -142,7 +141,7 @@ export function ImageImportSheet({
               <span className="eyebrow">색칠공부</span>
               <h3 id="builtin-images-title">내장 이미지에서 선택</h3>
             </div>
-            <small>선택하면 캔버스에 바로 열립니다.</small>
+            <small>선택하면 기존 그림을 지우고 캔버스에 바로 엽니다.</small>
           </div>
           {builtinImages.length ? (
             <div className="builtin-image-grid">
@@ -213,7 +212,7 @@ export function ImageImportSheet({
           </label>
           <a href={searchUrl} target="_blank" rel="noreferrer">이미지 검색 열기</a>
         </div>
-        <p className="import-help">웹에서 이미지를 복사한 뒤 돌아와 붙여넣으세요. 일부 사이트는 보안 정책상 주소 가져오기를 차단합니다.</p>
+        <p className="import-help">새 이미지를 놓으면 기존에 그린 선과 실행 취소 기록은 지워집니다. 웹 이미지는 복사한 뒤 돌아와 붙여넣으세요.</p>
 
         <div
           className={`image-preview ${image ? 'has-image' : ''}`}

@@ -1,4 +1,5 @@
 import type { BackgroundImageState, DrawingLayer, ShapeTool, Stroke, ViewTransform, WordGuide } from './types'
+import { circledStepNumber, createWritingSteps } from '../words/strokeOrder'
 
 export function clearCanvas(canvas: HTMLCanvasElement): void {
   const context = canvas.getContext('2d')
@@ -609,6 +610,47 @@ export function drawWordGuide(
   context.strokeStyle = 'rgba(82, 82, 76, 0.42)'
   context.lineWidth = Math.max(5, low * 0.018)
   context.strokeText(guide.text, width / 2, height / 2, maximumWidth)
+
+  if (guide.showStrokeOrder) {
+    const steps = createWritingSteps(guide)
+    const textWidth = context.measureText(guide.text).width
+    let cursorX = width / 2 - textWidth / 2
+    const centers = steps.map((step) => {
+      const characterWidth = context.measureText(step.character).width
+      const centerX = cursorX + characterWidth / 2
+      cursorX += characterWidth
+      return centerX
+    })
+    const badgeRadius = Math.min(22, Math.max(12, low * 0.045))
+    const badgeY = height / 2 - low * 0.59
+    context.textBaseline = 'middle'
+    context.textAlign = 'center'
+    context.lineWidth = Math.max(2, badgeRadius * 0.12)
+    context.font = `800 ${Math.max(13, badgeRadius * 0.9)}px ${family}`
+
+    for (let index = 0; index < steps.length; index += 1) {
+      const centerX = centers[index]
+      context.beginPath()
+      context.arc(centerX, badgeY, badgeRadius, 0, Math.PI * 2)
+      context.fillStyle = 'rgba(57, 88, 74, 0.92)'
+      context.fill()
+      context.fillStyle = '#ffffff'
+      context.fillText(String(index + 1), centerX, badgeY + 0.5)
+    }
+
+    const guideText = steps.map((step, index) => {
+      const detail = guide.language === 'ko' ? ` ${step.components.join('→')}` : ` ${step.character}`
+      return `${circledStepNumber(index)}${detail}`
+    }).join('   ')
+    let guideSize = Math.min(28, Math.max(15, low * 0.065))
+    context.font = `700 ${guideSize}px ${family}`
+    while (guideSize > 12 && context.measureText(guideText).width > maximumWidth) {
+      guideSize -= 1
+      context.font = `700 ${guideSize}px ${family}`
+    }
+    context.fillStyle = 'rgba(44, 70, 58, 0.78)'
+    context.fillText(guideText, width / 2, Math.min(height * 0.88, height / 2 + low * 0.64), maximumWidth)
+  }
   context.restore()
 }
 

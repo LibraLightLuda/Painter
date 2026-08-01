@@ -16,7 +16,19 @@ describe('random word guides', () => {
 
   it('normalizes saved guides and rejects invalid project data', () => {
     expect(normalizeWordGuide({ language: 'ko', text: '  행복  ' })).toEqual({ language: 'ko', text: '행복' })
+    expect(normalizeWordGuide({ language: 'ko', text: '행복', showStrokeOrder: true })).toEqual({
+      language: 'ko',
+      text: '행복',
+      showStrokeOrder: true,
+    })
     expect(normalizeWordGuide({ language: 'unknown', text: 'hello' })).toBeUndefined()
     expect(normalizeWordGuide({ language: 'en', text: '' })).toBeUndefined()
+  })
+
+  it('offers hundreds of unique words across all supported languages', () => {
+    const allWords = Object.values(WORDS).flat()
+    expect(allWords.length).toBeGreaterThanOrEqual(250)
+    expect(new Set(allWords).size).toBe(allWords.length)
+    for (const words of Object.values(WORDS)) expect(words.length).toBeGreaterThanOrEqual(60)
   })
 })

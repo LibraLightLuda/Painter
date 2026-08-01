@@ -477,6 +477,14 @@ export default function App() {
     )
   }
 
+  const handleToggleStrokeOrder = () => {
+    const guide = drawingState.wordGuide
+    if (!guide) return
+    const next = !guide.showStrokeOrder
+    controllerRef.current?.setWordGuideStrokeOrder(next)
+    announce(next ? '획순 가이드를 표시했어요.' : '획순 가이드를 숨겼어요.')
+  }
+
   const handleNewDrawing = async () => {
     const controller = controllerRef.current
     if (!controller) return
@@ -570,7 +578,6 @@ export default function App() {
     image: PreparedImage,
     mode: BackgroundImageState['mode'],
     rotation: BackgroundImageState['rotation'],
-    source: 'external' | 'builtin' = 'external',
   ) => {
     const controller = controllerRef.current
     if (!controller) return
@@ -580,11 +587,11 @@ export default function App() {
       height: image.height,
       mode,
       rotation,
-    }, source === 'builtin')
+    })
     autosaveRef.current?.markDirty()
     await autosaveRef.current?.flush()
     setIncomingImage(null)
-    announce(image.optimized ? '큰 이미지를 기기에 맞게 줄여 배경으로 놓았어요.' : '이미지를 배경으로 놓았어요.')
+    announce(image.optimized ? '기존 그림을 지우고 큰 이미지를 기기에 맞게 놓았어요.' : '기존 그림을 지우고 이미지를 놓았어요.')
   }
 
   const handleExport = async (options: ExportOptions) => {
@@ -723,6 +730,19 @@ export default function App() {
             <span aria-hidden="true">가</span>
             <span>단어 만들기</span>
           </button>
+          {drawingState.wordGuide && (
+            <button
+              type="button"
+              className={`stroke-order-button ${drawingState.wordGuide.showStrokeOrder ? 'is-selected' : ''}`}
+              onClick={handleToggleStrokeOrder}
+              aria-label="획순 가이드 표시"
+              aria-pressed={Boolean(drawingState.wordGuide.showStrokeOrder)}
+              data-testid="stroke-order-button"
+            >
+              <span aria-hidden="true">①</span>
+              <span>획순</span>
+            </button>
+          )}
           <button
             type="button"
             className="new-button"
@@ -812,6 +832,42 @@ export default function App() {
             </button>
           )}
           <nav id="drawing-tools" className="toolbar" aria-label="그리기 도구">
+            <button
+              type="button"
+              className="tool-button essential-tool"
+              onClick={() => controllerRef.current?.undo()}
+              disabled={!drawingState.canUndo}
+              aria-label="실행 취소"
+              data-testid="undo-button"
+            >
+              <span className="action-glyph" aria-hidden="true">↶</span>
+              <span>취소</span>
+            </button>
+            <button
+              type="button"
+              className="tool-button essential-tool"
+              onClick={() => controllerRef.current?.redo()}
+              disabled={!drawingState.canRedo}
+              aria-label="다시 실행"
+              data-testid="redo-button"
+            >
+              <span className="action-glyph" aria-hidden="true">↷</span>
+              <span>다시</span>
+            </button>
+            <button
+              type="button"
+              className="tool-button essential-tool"
+              onClick={() => {
+                setIncomingImage(null)
+                setImageSheetOpen(true)
+              }}
+              aria-label="이미지로 덮어쓰기"
+              data-testid="image-import-button"
+            >
+              <span className="action-glyph" aria-hidden="true">▣</span>
+              <span>이미지</span>
+            </button>
+            <span className="toolbar-divider" aria-hidden="true" />
             {(Object.keys(toolMeta) as BrushTool[]).map((tool) => {
               const selected = drawingState.brush.tool === tool
               return (
@@ -844,19 +900,6 @@ export default function App() {
             <button
               type="button"
               className="tool-button"
-              onClick={() => {
-                setIncomingImage(null)
-                setImageSheetOpen(true)
-              }}
-              aria-label="이미지 가져오기"
-              data-testid="image-import-button"
-            >
-              <span className="action-glyph" aria-hidden="true">▣</span>
-              <span>이미지</span>
-            </button>
-            <button
-              type="button"
-              className="tool-button"
               onClick={() => setBackupSheetOpen(true)}
               aria-label="원본 백업 및 불러오기"
               data-testid="project-file-button"
@@ -873,28 +916,6 @@ export default function App() {
             >
               <span className="action-glyph" aria-hidden="true">▱</span>
               <span>레이어</span>
-            </button>
-            <button
-              type="button"
-              className="tool-button"
-              onClick={() => controllerRef.current?.undo()}
-              disabled={!drawingState.canUndo}
-              aria-label="실행 취소"
-              data-testid="undo-button"
-            >
-              <span className="action-glyph" aria-hidden="true">↶</span>
-              <span>취소</span>
-            </button>
-            <button
-              type="button"
-              className="tool-button"
-              onClick={() => controllerRef.current?.redo()}
-              disabled={!drawingState.canRedo}
-              aria-label="다시 실행"
-              data-testid="redo-button"
-            >
-              <span className="action-glyph" aria-hidden="true">↷</span>
-              <span>다시</span>
             </button>
           </nav>
 

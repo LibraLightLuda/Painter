@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fingertip-shell-v14'
+const CACHE_NAME = 'fingertip-shell-v15'
 const APP_BASE_PATH = new URL('./', self.registration.scope).pathname
 const appPath = (path = '') => `${APP_BASE_PATH}${path}`
 const APP_INDEX_PATH = appPath('index.html')

@@ -121,6 +121,7 @@ input:focus-visible {
 .save-pill,
 .quiet-button,
 .word-button,
+.stroke-order-button,
 .new-button,
 .export-button {
   min-height: 44px;
@@ -172,6 +173,25 @@ input:focus-visible {
   border-radius: 8px 8px 3px 3px;
   background: #39584a;
 }
+.stroke-order-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 66px;
+  padding: 0 10px;
+  color: #3c5148;
+  font-weight: 740;
+  border-color: #b6c8bf;
+  background: #f1f6f2;
+  cursor: pointer;
+}
+.stroke-order-button.is-selected {
+  color: white;
+  border-color: #39584a;
+  background: #39584a;
+}
+.stroke-order-button > span:first-child { font-size: 1.05rem; }
 .new-button {
   display: flex;
   align-items: center;
@@ -376,6 +396,12 @@ input:focus-visible {
   background: #ebe5d9;
   box-shadow: inset 0 -3px 0 var(--accent);
 }
+.tool-button.essential-tool {
+  color: #384b43;
+  border-color: #d5ddd8;
+  background: #f0f4f1;
+}
+.tool-button.essential-tool:hover:not(:disabled) { background: #e1ebe5; }
 .toolbar-divider { width: 1px; height: 32px; margin: 0 2px; background: var(--line); flex: none; }
 .tool-glyph,
 .action-glyph {
@@ -799,6 +825,10 @@ input:focus-visible {
 @keyframes pulse { to { opacity: 0.35; } }
 @keyframes hint-out { to { opacity: 0; transform: translate(-50%, 6px); } }
 
+@media (hover: none) and (pointer: coarse), (max-width: 820px) {
+  .title-field { display: none; }
+}
+
 @media (max-width: 720px), (max-height: 650px) {
   .tool-dock {
     max-height: calc(160px + var(--safe-bottom));
@@ -875,6 +905,8 @@ input:focus-visible {
   .word-button > span:first-child { width: 23px; height: 23px; }
   .word-button > span:last-child { font-size: 0; }
   .word-button > span:last-child::after { content: "단어"; font-size: 0.7rem; }
+  .stroke-order-button { min-width: 52px; padding-inline: 7px; }
+  .stroke-order-button > span:last-child { font-size: 0.7rem; }
   .export-button { min-width: 58px; padding-inline: 10px; }
   .new-button { min-width: 44px; padding-inline: 9px; }
   .new-button span:last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }

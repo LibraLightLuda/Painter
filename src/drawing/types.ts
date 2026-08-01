@@ -97,6 +97,7 @@ export type WordLanguage = 'en' | 'ko' | 'ja' | 'zh'
 export interface WordGuide {
   language: WordLanguage
   text: string
+  showStrokeOrder?: boolean
 }
 
 export interface HistorySnapshot {

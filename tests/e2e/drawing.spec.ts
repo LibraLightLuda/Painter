@@ -43,6 +43,15 @@ test('draws, saves, restores, undoes and exports the original canvas size', asyn
   if (process.env.VISUAL_QA === '1') await page.screenshot({ path: '.qa/mobile.png', fullPage: true })
 })
 
+test('puts essential actions first and hides the title field on mobile', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.title-field')).toBeHidden()
+  const firstTools = await page.locator('#drawing-tools [data-testid]').evaluateAll((elements) =>
+    elements.slice(0, 4).map((element) => element.getAttribute('data-testid')),
+  )
+  expect(firstTools).toEqual(['undo-button', 'redo-button', 'image-import-button', 'tool-pen'])
+})
+
 test('renders freehand input without clearing the display canvas on every frame', async ({ page }) => {
   await page.addInitScript(() => {
     const trackedWindow = window as typeof window & { __displayCanvasClears: number }
@@ -227,10 +236,14 @@ test('creates, saves and restores a drawable multilingual outline word', async (
   await expect(page.getByTestId('undo-button')).toBeEnabled()
   await page.getByTestId('image-import-button').click()
   await page.getByTestId('builtin-image-01-flower-teapot').click()
+  await expect(page.getByTestId('undo-button')).toBeDisabled()
 
   await page.getByTestId('word-button').click()
   await expect(page.getByTestId('undo-button')).toBeDisabled()
   await expect(page.locator('.toast')).toContainText(/기존 그림을 모두 지우고 .*단어 .*를 만들었어요/)
+  await expect(page.getByTestId('stroke-order-button')).toHaveAttribute('aria-pressed', 'false')
+  await page.getByTestId('stroke-order-button').click()
+  await expect(page.getByTestId('stroke-order-button')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByText('기기에 저장됨')).toBeVisible({ timeout: 7_000 })
 
   const savedWordState = await page.evaluate(async () => {
@@ -247,7 +260,7 @@ test('creates, saves and restores a drawable multilingual outline word', async (
       payload: {
         backgroundImage?: unknown
         history: { done: unknown[]; undone: unknown[] }
-        wordGuide?: { language: string; text: string }
+        wordGuide?: { language: string; text: string; showStrokeOrder?: boolean }
       }
     }>>((resolve, reject) => {
       const getAll = transaction.objectStore('revisions').getAll()
@@ -269,6 +282,7 @@ test('creates, saves and restores a drawable multilingual outline word', async (
   const savedGuide = savedWordState?.wordGuide
   expect(savedGuide?.language).toMatch(/^(en|ko|ja|zh)$/)
   expect(savedGuide?.text.length).toBeGreaterThan(0)
+  expect(savedGuide?.showStrokeOrder).toBe(true)
   expect(savedWordState).toMatchObject({
     doneCount: 0,
     undoneCount: 0,
@@ -291,6 +305,7 @@ test('creates, saves and restores a drawable multilingual outline word', async (
 
   await page.reload()
   await expect(page.getByTestId('word-button')).toHaveAttribute('aria-label', new RegExp(savedGuide?.text ?? ''))
+  await expect(page.getByTestId('stroke-order-button')).toHaveAttribute('aria-pressed', 'true')
   const canvas = page.getByTestId('drawing-canvas')
   const box = await canvas.boundingBox()
   if (!box) throw new Error('Canvas has no bounding box')
@@ -358,6 +373,15 @@ test('eraser removes artwork instead of painting with white', async ({ page }) =
 
 test('imports a local image, restores it and exports JPEG options', async ({ page }) => {
   await page.goto('/')
+  await page.getByTestId('word-button').click()
+  const canvas = page.getByTestId('drawing-canvas')
+  const canvasBox = await canvas.boundingBox()
+  if (!canvasBox) throw new Error('Canvas has no bounding box before image replacement')
+  await page.mouse.move(canvasBox.x + canvasBox.width * 0.42, canvasBox.y + canvasBox.height * 0.46)
+  await page.mouse.down()
+  await page.mouse.move(canvasBox.x + canvasBox.width * 0.58, canvasBox.y + canvasBox.height * 0.54, { steps: 6 })
+  await page.mouse.up()
+  await expect(page.getByTestId('undo-button')).toBeEnabled()
   await page.getByTestId('image-import-button').click()
   await expect(page.getByRole('heading', { name: '이미지 가져오기' })).toBeVisible()
   const source = new PNG({ width: 320, height: 180 })
@@ -375,7 +399,9 @@ test('imports a local image, restores it and exports JPEG options', async ({ pag
   await expect(page.getByAltText('가져올 이미지 미리보기')).toBeVisible()
   await page.getByRole('button', { name: '채우기' }).click()
   await page.getByRole('button', { name: '배경으로 놓기' }).click()
-  await expect(page.getByText('이미지를 배경으로 놓았어요.')).toBeVisible()
+  await expect(page.getByText('기존 그림을 지우고 이미지를 놓았어요.')).toBeVisible()
+  await expect(page.getByTestId('undo-button')).toBeDisabled()
+  await expect(page.getByTestId('word-button')).toHaveAttribute('aria-label', '랜덤 단어 만들기')
   await page.reload()
 
   await page.getByTestId('export-button').click()
@@ -398,7 +424,7 @@ test('loads a built-in coloring image directly onto the canvas', async ({ page }
   expect(await page.locator('[data-testid^="builtin-image-"]').count()).toBeGreaterThanOrEqual(13)
   await page.getByTestId('builtin-image-01-flower-teapot').click()
   await expect(page.getByRole('heading', { name: '이미지 가져오기' })).toBeHidden()
-  await expect(page.locator('.toast')).toContainText('이미지를 배경으로 놓았어요.')
+  await expect(page.locator('.toast')).toContainText('기존 그림을 지우고 이미지를 놓았어요.')
 
   await page.reload()
   await expect(page.getByTestId('word-button')).toHaveAttribute('aria-label', '랜덤 단어 만들기')

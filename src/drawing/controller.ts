@@ -383,10 +383,14 @@ export class DrawingController {
     return canvasToBlob(this.renderOutput(scale), type, quality)
   }
 
-  async setBackgroundImage(blob: Blob, state: BackgroundImageState, clearWordGuide = false): Promise<void> {
+  async setBackgroundImage(blob: Blob, state: BackgroundImageState): Promise<void> {
     this.cancelActive()
-    if (clearWordGuide) this.wordGuide = undefined
     await this.replaceBackgroundImage(blob, state)
+    this.history.clear()
+    this.currentStroke = null
+    clearCanvas(this.committed)
+    clearCanvas(this.preview)
+    this.wordGuide = undefined
     this.requestRender()
     this.emit('content')
   }
@@ -403,6 +407,14 @@ export class DrawingController {
   setWordGuide(guide: WordGuide): void {
     this.cancelActive()
     this.wordGuide = normalizeWordGuide(guide)
+    this.requestRender()
+    this.emit('content')
+  }
+
+  setWordGuideStrokeOrder(showStrokeOrder: boolean): void {
+    if (!this.wordGuide) return
+    this.cancelActive()
+    this.wordGuide = normalizeWordGuide({ ...this.wordGuide, showStrokeOrder })
     this.requestRender()
     this.emit('content')
   }
