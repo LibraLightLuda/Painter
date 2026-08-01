@@ -61,6 +61,17 @@ function uniquePoints(points: Point[]): Point[] {
   return result
 }
 
+function stabilizedPoint(previous: Point, next: Point, amount: number): Point {
+  const strength = Math.min(0.92, Math.max(0, amount) * 0.92)
+  const ratio = 1 - strength
+  return {
+    ...next,
+    x: previous.x + (next.x - previous.x) * ratio,
+    y: previous.y + (next.y - previous.y) * ratio,
+    pressure: (previous.pressure ?? 1) + ((next.pressure ?? 1) - (previous.pressure ?? 1)) * ratio,
+  }
+}
+
 export class DrawingController {
   private readonly history = new StrokeHistory(50)
   private readonly input = new InputMachine()
@@ -86,7 +97,15 @@ export class DrawingController {
     color: '#1e1f1d',
     size: 4,
     opacity: 1,
+    flow: 1,
+    hardness: 0.95,
+    spacing: 0.1,
+    stabilization: 0.35,
+    pressure: true,
+    shapeFill: false,
+    tolerance: 24,
   }
+  private previousDrawingTool: BrushSettings['tool'] = 'pen'
   private backgroundAsset: Blob | null = null
   private backgroundImage: CanvasImageSource | null = null
   private backgroundImageState: BackgroundImageState | undefined
@@ -252,7 +271,13 @@ export class DrawingController {
       ...next,
       size: Math.min(160, Math.max(1, next.size ?? this.brush.size)),
       opacity: Math.min(1, Math.max(0.05, next.opacity ?? this.brush.opacity)),
+      flow: Math.min(1, Math.max(0.05, next.flow ?? this.brush.flow)),
+      hardness: Math.min(1, Math.max(0.02, next.hardness ?? this.brush.hardness)),
+      spacing: Math.min(1, Math.max(0.04, next.spacing ?? this.brush.spacing)),
+      stabilization: Math.min(1, Math.max(0, next.stabilization ?? this.brush.stabilization)),
+      tolerance: Math.min(255, Math.max(0, next.tolerance ?? this.brush.tolerance)),
     }
+    if (next.tool && next.tool !== 'eyedropper') this.previousDrawingTool = next.tool
     this.emit('state')
   }
 
@@ -383,6 +408,9 @@ export class DrawingController {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
       time: event.timeStamp,
+      pressure: event.pointerType === 'mouse' ? 1 : (event.pressure > 0 ? event.pressure : 1),
+      tiltX: event.tiltX,
+      tiltY: event.tiltY,
     }
   }
 
@@ -392,6 +420,15 @@ export class DrawingController {
       switch (action.type) {
         case 'begin-stroke': {
           const point = screenToCanvas(action.point, this.view)
+          if (this.brush.tool === 'eyedropper') {
+            this.brush = {
+              ...this.brush,
+              color: this.sampleColor(point),
+              tool: this.previousDrawingTool,
+            }
+            this.emit('state')
+            break
+          }
           this.currentStroke = {
             id: crypto.randomUUID(),
             ...this.brush,
@@ -405,7 +442,21 @@ export class DrawingController {
         case 'append-stroke': {
           if (!this.currentStroke) break
           const next = action.points.map((point) => screenToCanvas(point, this.view))
-          this.currentStroke.points = uniquePoints([...this.currentStroke.points, ...next])
+          if (
+            this.currentStroke.tool === 'line' ||
+            this.currentStroke.tool === 'rectangle' ||
+            this.currentStroke.tool === 'ellipse' ||
+            this.currentStroke.tool === 'arrow'
+          ) {
+            this.currentStroke.points = [this.currentStroke.points[0], next.at(-1)!]
+          } else {
+            const stabilized = [...this.currentStroke.points]
+            for (const point of next) {
+              const previous = stabilized.at(-1)!
+              stabilized.push(stabilizedPoint(previous, point, this.currentStroke.stabilization ?? 0))
+            }
+            this.currentStroke.points = uniquePoints(stabilized)
+          }
           this.requestRender()
           break
         }
@@ -465,13 +516,23 @@ export class DrawingController {
     return stroke.id
   }
 
+  private sampleColor(point: Point): string {
+    const output = this.renderOutput()
+    const context = output.getContext('2d')
+    if (!context) return this.brush.color
+    const x = Math.min(output.width - 1, Math.max(0, Math.floor(point.x)))
+    const y = Math.min(output.height - 1, Math.max(0, Math.floor(point.y)))
+    const [red, green, blue] = context.getImageData(x, y, 1, 1).data
+    return `#${[red, green, blue].map((value) => value.toString(16).padStart(2, '0')).join('')}`
+  }
+
   private render(): void {
     this.frameId = null
     if (this.disposed) return
     const previewContext = this.preview.getContext('2d')
     if (previewContext) {
       previewContext.clearRect(0, 0, this.preview.width, this.preview.height)
-      if (this.currentStroke) {
+      if (this.currentStroke && this.currentStroke.tool !== 'fill') {
         const layerOpacity = this.layers.find((layer) => layer.id === this.activeLayerId)?.opacity ?? 1
         drawStroke(
           previewContext,

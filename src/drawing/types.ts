@@ -10,12 +10,27 @@ export type BrushTool =
   | 'highlighter'
   | 'spray'
   | 'eraser'
+  | 'eyedropper'
+  | 'fill'
+  | 'line'
+  | 'rectangle'
+  | 'ellipse'
+  | 'arrow'
+
+export type ShapeTool = 'line' | 'rectangle' | 'ellipse' | 'arrow'
 
 export interface BrushSettings {
   tool: BrushTool
   color: string
   size: number
   opacity: number
+  flow: number
+  hardness: number
+  spacing: number
+  stabilization: number
+  pressure: boolean
+  shapeFill: boolean
+  tolerance: number
 }
 
 export interface DrawingLayer {
@@ -29,6 +44,9 @@ export interface Point {
   x: number
   y: number
   time: number
+  pressure?: number
+  tiltX?: number
+  tiltY?: number
 }
 
 export interface ScreenPoint extends Point {
@@ -42,6 +60,13 @@ export interface Stroke {
   color: string
   size: number
   opacity: number
+  flow?: number
+  hardness?: number
+  spacing?: number
+  stabilization?: number
+  pressure?: boolean
+  shapeFill?: boolean
+  tolerance?: number
   seed?: number
   layerId?: string
   points: Point[]

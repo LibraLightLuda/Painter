@@ -4,11 +4,14 @@ import { ImageImportSheet } from './components/ImageImportSheet'
 import { ExportSheet, type ExportOptions } from './components/ExportSheet'
 import { ProjectListSheet } from './components/ProjectListSheet'
 import { LayerSheet } from './components/LayerSheet'
+import { ColorSheet } from './components/ColorSheet'
+import { BrushSettingsSheet } from './components/BrushSettingsSheet'
 import { type DrawingChange, type DrawingController, type DrawingState } from './drawing/controller'
 import {
   createEmptySnapshot,
   DEFAULT_PROJECT_ID,
   type BackgroundImageState,
+  type BrushSettings,
   type BrushTool,
   type SaveStatus,
 } from './drawing/types'
@@ -35,37 +38,85 @@ const initialDrawingState: DrawingState = {
   canRedo: false,
   scale: 1,
   inputMode: 'idle',
-  brush: { tool: 'pen', color: '#1e1f1d', size: 4, opacity: 1 },
+  brush: {
+    tool: 'pen', color: '#1e1f1d', size: 4, opacity: 1,
+    flow: 1, hardness: 0.95, spacing: 0.1, stabilization: 0.35,
+    pressure: true, shapeFill: false, tolerance: 24,
+  },
   layers: [{ id: 'layer-1', name: '그리기 1', visible: true, opacity: 1 }],
   activeLayerId: 'layer-1',
 }
 
-const toolMeta: Record<BrushTool, { label: string; glyph: string; size: number; opacity: number }> = {
-  pen: { label: '펜', glyph: '●', size: 4, opacity: 1 },
-  pencil: { label: '연필', glyph: '✎', size: 3, opacity: 0.75 },
-  marker: { label: '마커', glyph: '▬', size: 18, opacity: 0.55 },
-  brush: { label: '붓', glyph: '◒', size: 14, opacity: 0.85 },
-  highlighter: { label: '형광펜', glyph: '▰', size: 32, opacity: 0.22 },
-  spray: { label: '스프레이', glyph: '⁙', size: 24, opacity: 0.65 },
-  eraser: { label: '지우개', glyph: '◇', size: 24, opacity: 1 },
+interface ToolPreset {
+  label: string
+  glyph: string
+  size: number
+  opacity: number
+  flow: number
+  hardness: number
+  spacing: number
+  stabilization: number
+  pressure: boolean
+}
+
+const toolMeta: Record<BrushTool, ToolPreset> = {
+  pen: { label: '펜', glyph: '●', size: 4, opacity: 1, flow: 1, hardness: 0.95, spacing: 0.1, stabilization: 0.35, pressure: true },
+  pencil: { label: '연필', glyph: '✎', size: 3, opacity: 0.75, flow: 0.85, hardness: 0.82, spacing: 0.12, stabilization: 0.45, pressure: true },
+  marker: { label: '마커', glyph: '▬', size: 18, opacity: 0.55, flow: 0.85, hardness: 0.72, spacing: 0.16, stabilization: 0.3, pressure: false },
+  brush: { label: '붓', glyph: '◒', size: 14, opacity: 0.85, flow: 0.78, hardness: 0.58, spacing: 0.1, stabilization: 0.55, pressure: true },
+  highlighter: { label: '형광펜', glyph: '▰', size: 32, opacity: 0.22, flow: 0.75, hardness: 0.82, spacing: 0.15, stabilization: 0.3, pressure: false },
+  spray: { label: '스프레이', glyph: '⁙', size: 24, opacity: 0.65, flow: 0.72, hardness: 0.6, spacing: 0.3, stabilization: 0.2, pressure: true },
+  eraser: { label: '지우개', glyph: '◇', size: 24, opacity: 1, flow: 1, hardness: 0.95, spacing: 0.1, stabilization: 0.4, pressure: true },
+  eyedropper: { label: '스포이드', glyph: '⌁', size: 4, opacity: 1, flow: 1, hardness: 1, spacing: 0.1, stabilization: 0, pressure: false },
+  fill: { label: '페인트통', glyph: '◩', size: 4, opacity: 1, flow: 1, hardness: 1, spacing: 0.1, stabilization: 0, pressure: false },
+  line: { label: '직선', glyph: '╱', size: 5, opacity: 1, flow: 1, hardness: 1, spacing: 0.1, stabilization: 0, pressure: true },
+  rectangle: { label: '사각형', glyph: '□', size: 5, opacity: 1, flow: 1, hardness: 1, spacing: 0.1, stabilization: 0, pressure: true },
+  ellipse: { label: '원', glyph: '○', size: 5, opacity: 1, flow: 1, hardness: 1, spacing: 0.1, stabilization: 0, pressure: true },
+  arrow: { label: '화살표', glyph: '↗', size: 5, opacity: 1, flow: 1, hardness: 1, spacing: 0.1, stabilization: 0, pressure: true },
 }
 
 const colors = ['#1e1f1d', '#246bce', '#d64b3c', '#21845b', '#ee762f']
 const TOOL_SETTINGS_KEY = 'fingertip-tool-settings-v1'
 
 type ToolNumberMap = Record<BrushTool, number>
+type ToolDetails = Pick<BrushSettings, 'flow' | 'hardness' | 'spacing' | 'stabilization' | 'pressure' | 'shapeFill' | 'tolerance'>
+type ToolDetailsMap = Record<BrushTool, ToolDetails>
 
 interface StoredToolSettings {
   brush?: { tool?: BrushTool; color?: string }
   sizes?: Partial<ToolNumberMap>
   opacities?: Partial<ToolNumberMap>
   recentColors?: string[]
+  favoriteColors?: string[]
+  details?: Partial<Record<BrushTool, Partial<ToolDetails>>>
 }
 
 function defaultToolNumbers(key: 'size' | 'opacity'): ToolNumberMap {
   return Object.fromEntries(
     (Object.keys(toolMeta) as BrushTool[]).map((tool) => [tool, toolMeta[tool][key]]),
   ) as ToolNumberMap
+}
+
+function defaultToolDetails(): ToolDetailsMap {
+  return Object.fromEntries(
+    (Object.keys(toolMeta) as BrushTool[]).map((tool) => [tool, {
+      flow: toolMeta[tool].flow,
+      hardness: toolMeta[tool].hardness,
+      spacing: toolMeta[tool].spacing,
+      stabilization: toolMeta[tool].stabilization,
+      pressure: toolMeta[tool].pressure,
+      shapeFill: false,
+      tolerance: 24,
+    }]),
+  ) as ToolDetailsMap
+}
+
+function mergeToolDetails(stored?: StoredToolSettings['details']): ToolDetailsMap {
+  const defaults = defaultToolDetails()
+  for (const tool of Object.keys(defaults) as BrushTool[]) {
+    defaults[tool] = { ...defaults[tool], ...stored?.[tool] }
+  }
+  return defaults
 }
 
 function readToolSettings(): StoredToolSettings {
@@ -110,6 +161,10 @@ export default function App() {
   const [recentColors, setRecentColors] = useState<string[]>(() =>
     storedToolsRef.current.recentColors?.slice(0, 12) ?? colors,
   )
+  const [favoriteColors, setFavoriteColors] = useState<string[]>(() => storedToolsRef.current.favoriteColors?.slice(0, 16) ?? [])
+  const [toolDetails, setToolDetails] = useState<ToolDetailsMap>(() => mergeToolDetails(storedToolsRef.current.details))
+  const [colorSheetOpen, setColorSheetOpen] = useState(false)
+  const [brushSettingsOpen, setBrushSettingsOpen] = useState(false)
   const [imageSheetOpen, setImageSheetOpen] = useState(false)
   const [incomingImage, setIncomingImage] = useState<Blob | null>(null)
   const [exportSheetOpen, setExportSheetOpen] = useState(false)
@@ -168,6 +223,7 @@ export default function App() {
         color: storedBrush?.color ?? '#1e1f1d',
         size: storedToolsRef.current.sizes?.[storedTool] ?? toolMeta[storedTool].size,
         opacity: storedToolsRef.current.opacities?.[storedTool] ?? toolMeta[storedTool].opacity,
+        ...mergeToolDetails(storedToolsRef.current.details)[storedTool],
       })
 
       const autosave = new AutosaveCoordinator({
@@ -198,12 +254,19 @@ export default function App() {
           sizes: toolSizes,
           opacities: toolOpacities,
           recentColors,
+          favoriteColors,
+          details: toolDetails,
         } satisfies StoredToolSettings),
       )
     } catch {
       // Drawing remains available when browser settings storage is restricted.
     }
-  }, [drawingState.brush.color, drawingState.brush.tool, recentColors, toolOpacities, toolSizes])
+  }, [drawingState.brush.color, drawingState.brush.tool, favoriteColors, recentColors, toolDetails, toolOpacities, toolSizes])
+
+  useEffect(() => {
+    const color = drawingState.brush.color
+    setRecentColors((current) => current[0] === color ? current : [color, ...current.filter((item) => item !== color)].slice(0, 12))
+  }, [drawingState.brush.color])
 
   useEffect(() => {
     const onVisibility = () => {
@@ -308,7 +371,14 @@ export default function App() {
       tool,
       size: toolSizes[tool],
       opacity: toolOpacities[tool] ?? preset.opacity,
+      ...toolDetails[tool],
     })
+  }
+
+  const handleBrushDetails = (next: Partial<ToolDetails>) => {
+    const tool = drawingState.brush.tool
+    setToolDetails((current) => ({ ...current, [tool]: { ...current[tool], ...next } }))
+    controllerRef.current?.setBrush(next)
   }
 
   const handleBrushOpacity = (opacity: number) => {
@@ -518,6 +588,8 @@ export default function App() {
   }
 
   const displayedStatus = !online && saveStatus === 'saved' ? '오프라인 · 기기에 저장됨' : statusText[saveStatus]
+  const colorDisabled = drawingState.brush.tool === 'eraser' || drawingState.brush.tool === 'eyedropper'
+  const sizeDisabled = drawingState.brush.tool === 'eyedropper' || drawingState.brush.tool === 'fill'
 
   return (
     <main className="app-shell">
@@ -640,6 +712,17 @@ export default function App() {
                 </button>
               )
             })}
+            <button
+              type="button"
+              className="tool-button"
+              onClick={() => setBrushSettingsOpen(true)}
+              disabled={drawingState.brush.tool === 'eyedropper'}
+              aria-label="브러시 세부 설정"
+              data-testid="brush-settings-button"
+            >
+              <span className="action-glyph" aria-hidden="true">⚙</span>
+              <span>세부</span>
+            </button>
             <span className="toolbar-divider" aria-hidden="true" />
             <button
               type="button"
@@ -699,7 +782,7 @@ export default function App() {
           </nav>
 
           <section className="brush-controls" aria-label="브러시 설정">
-            <div className={`color-controls ${drawingState.brush.tool === 'eraser' ? 'is-disabled' : ''}`} aria-label="색상 선택">
+            <div className={`color-controls ${colorDisabled ? 'is-disabled' : ''}`} aria-label="색상 선택">
               {recentColors.slice(0, 6).map((color) => (
                 <button
                   key={color}
@@ -709,18 +792,12 @@ export default function App() {
                   onClick={() => handleColor(color)}
                   aria-label={`색상 ${color}`}
                   aria-pressed={drawingState.brush.color === color}
-                  disabled={drawingState.brush.tool === 'eraser'}
+                  disabled={colorDisabled}
                 />
               ))}
-              <label className="custom-color" aria-label="사용자 색상">
-                <input
-                  type="color"
-                  value={drawingState.brush.color}
-                  onChange={(event) => handleColor(event.target.value)}
-                  disabled={drawingState.brush.tool === 'eraser'}
-                />
+              <button type="button" className="custom-color" aria-label="색상 휠과 팔레트 열기" onClick={() => setColorSheetOpen(true)} disabled={colorDisabled}>
                 <span aria-hidden="true">＋</span>
-              </label>
+              </button>
             </div>
             <label className="size-control">
               <span>굵기 <strong>{Math.round(drawingState.brush.size)} px</strong></span>
@@ -732,6 +809,7 @@ export default function App() {
                 value={drawingState.brush.size}
                 onChange={(event) => handleBrushSize(Number(event.target.value))}
                 aria-label="브러시 굵기"
+                disabled={sizeDisabled}
                 data-testid="brush-size"
               />
               <i
@@ -750,7 +828,7 @@ export default function App() {
                 value={Math.round(drawingState.brush.opacity * 100)}
                 onChange={(event) => handleBrushOpacity(Number(event.target.value) / 100)}
                 aria-label="브러시 불투명도"
-                disabled={drawingState.brush.tool === 'eraser'}
+                disabled={drawingState.brush.tool === 'eraser' || drawingState.brush.tool === 'eyedropper'}
                 data-testid="brush-opacity"
               />
             </label>
@@ -776,6 +854,21 @@ export default function App() {
         busy={exporting}
         onClose={() => !exporting && setExportSheetOpen(false)}
         onExport={handleExport}
+      />
+      <ColorSheet
+        open={colorSheetOpen}
+        color={drawingState.brush.color}
+        recent={recentColors}
+        favorites={favoriteColors}
+        onChoose={handleColor}
+        onFavorites={setFavoriteColors}
+        onClose={() => setColorSheetOpen(false)}
+      />
+      <BrushSettingsSheet
+        open={brushSettingsOpen}
+        brush={drawingState.brush}
+        onChange={handleBrushDetails}
+        onClose={() => setBrushSettingsOpen(false)}
       />
 
       {backupSheetOpen && (

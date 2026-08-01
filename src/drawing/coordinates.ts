@@ -26,17 +26,17 @@ export function fitTransform(
 
 export function screenToCanvas(point: Point, view: ViewTransform): Point {
   return {
+    ...point,
     x: (point.x - view.offsetX) / view.scale,
     y: (point.y - view.offsetY) / view.scale,
-    time: point.time,
   }
 }
 
 export function canvasToScreen(point: Point, view: ViewTransform): Point {
   return {
+    ...point,
     x: point.x * view.scale + view.offsetX,
     y: point.y * view.scale + view.offsetY,
-    time: point.time,
   }
 }
 

@@ -220,6 +220,82 @@ test('creates layers and manages multiple saved projects', async ({ page }) => {
   await expect(page.locator('.project-card')).toHaveCount(2)
 })
 
+test('stores advanced brush settings and pointer pressure samples', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('tool-pen').click()
+  await page.getByTestId('brush-settings-button').click()
+  await page.getByTestId('brush-stabilization').fill('72')
+  await page.getByTestId('brush-flow').fill('64')
+  await page.getByTestId('brush-hardness').fill('58')
+  await page.getByTestId('brush-spacing').fill('18')
+  await page.getByRole('button', { name: '브러시 설정 닫기' }).click()
+
+  const canvas = page.getByTestId('drawing-canvas')
+  await canvas.evaluate((element) => {
+    const rect = element.getBoundingClientRect()
+    const dispatch = (type: string, x: number, pressure: number) => element.dispatchEvent(new PointerEvent(type, {
+      pointerId: 9,
+      pointerType: 'pen',
+      clientX: rect.left + x,
+      clientY: rect.top + rect.height / 2,
+      pressure,
+      bubbles: true,
+      cancelable: true,
+    }))
+    dispatch('pointerdown', rect.width * 0.35, 0.2)
+    dispatch('pointermove', rect.width * 0.5, 0.55)
+    dispatch('pointerup', rect.width * 0.65, 0.9)
+  })
+  await expect(page.getByText('기기에 저장됨')).toBeVisible({ timeout: 7_000 })
+  const saved = await page.evaluate(async () => {
+    const settings = JSON.parse(localStorage.getItem('fingertip-tool-settings-v1') ?? '{}')
+    const request = indexedDB.open('fingertip-drawing')
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const transaction = database.transaction('revisions', 'readonly')
+    const revisions = await new Promise<Array<{ status: string; payload: { history: { done: Array<{ points: Array<{ pressure?: number }> }> } } }>>((resolve, reject) => {
+      const getAll = transaction.objectStore('revisions').getAll()
+      getAll.onsuccess = () => resolve(getAll.result)
+      getAll.onerror = () => reject(getAll.error)
+    })
+    database.close()
+    const stroke = revisions.filter((revision) => revision.status === 'complete').at(-1)?.payload.history.done.at(-1)
+    return { details: settings.details?.pen, pressures: stroke?.points.map((point) => point.pressure ?? 0) }
+  })
+  expect(saved.details).toMatchObject({ stabilization: 0.72, flow: 0.64, hardness: 0.58, spacing: 0.18 })
+  expect(saved.pressures?.[0] ?? 0).toBeCloseTo(0.2)
+  expect(Math.max(...(saved.pressures ?? [0]))).toBeGreaterThan(0.2)
+})
+
+test('fills regions, draws filled shapes and picks a canvas color', async ({ page }) => {
+  await page.goto('/')
+  const canvas = page.getByTestId('drawing-canvas')
+  const box = await canvas.boundingBox()
+  if (!box) throw new Error('Canvas has no bounding box')
+  await page.getByRole('button', { name: '색상 #d64b3c' }).click()
+  await page.getByTestId('tool-fill').click()
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(page.getByTestId('undo-button')).toBeEnabled()
+  await page.getByTestId('undo-button').click()
+
+  await page.getByTestId('tool-rectangle').click()
+  await page.getByTestId('brush-settings-button').click()
+  await page.getByTestId('shape-fill').check()
+  await page.getByRole('button', { name: '브러시 설정 닫기' }).click()
+  await page.mouse.move(box.x + box.width * 0.35, box.y + box.height * 0.35)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.65, box.y + box.height * 0.65)
+  await page.mouse.up()
+
+  await page.getByRole('button', { name: '색상 #246bce' }).click()
+  await page.getByTestId('tool-eyedropper').click()
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(page.getByTestId('tool-rectangle')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: '색상 #d64b3c' })).toHaveAttribute('aria-pressed', 'true')
+})
+
 test('serves the cached app shell while the network is unavailable', async ({ page, context }) => {
   await page.goto('/')
   await page.evaluate(() => navigator.serviceWorker.ready)
