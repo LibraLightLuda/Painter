@@ -4,7 +4,7 @@ export interface VisitorCounts {
 }
 
 interface CounterResponse {
-  count?: unknown
+  value?: unknown
 }
 
 interface VisitorCounterOptions {
@@ -13,7 +13,8 @@ interface VisitorCounterOptions {
   now?: Date
 }
 
-const API_ROOT = 'https://api.counterapi.dev/v1/libralightluda-painter'
+const API_ROOT = 'https://countapi.mileshilliard.com/api/v1'
+const COUNTER_PREFIX = 'libralightluda-painter'
 const VISIT_MARKER_PREFIX = 'fingertip-visitor-counted'
 
 function koreanDateKey(date: Date): string {
@@ -34,19 +35,20 @@ async function readOrIncrementCounter(
   storage: Pick<Storage, 'getItem' | 'setItem'>,
 ): Promise<number> {
   const shouldIncrement = storage.getItem(marker) !== '1'
-  const action = shouldIncrement ? '/up' : ''
-  const response = await fetcher(`${API_ROOT}/${encodeURIComponent(name)}${action}`, {
+  const action = shouldIncrement ? 'hit' : 'get'
+  const key = `${COUNTER_PREFIX}-${name}`
+  const response = await fetcher(`${API_ROOT}/${action}/${encodeURIComponent(key)}`, {
     headers: { Accept: 'application/json' },
     mode: 'cors',
   })
   if (!response.ok) throw new Error(`Visitor counter request failed: ${response.status}`)
 
   const data = await response.json() as CounterResponse
-  if (typeof data.count !== 'number' || !Number.isFinite(data.count)) {
+  if (typeof data.value !== 'number' || !Number.isFinite(data.value)) {
     throw new Error('Visitor counter returned an invalid count')
   }
   if (shouldIncrement) storage.setItem(marker, '1')
-  return data.count
+  return data.value
 }
 
 export function isVisitorCounterHost(hostname: string): boolean {

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { countVisitor, isVisitorCounterHost } from '../src/visitors/counter'
 
-function response(count: number): Response {
-  return new Response(JSON.stringify({ count }), {
+function response(value: number): Response {
+  return new Response(JSON.stringify({ value }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   })
@@ -32,10 +32,10 @@ describe('visitor counter', () => {
     await expect(countVisitor({ fetcher, storage, now })).resolves.toEqual({ today: 7, total: 132 })
 
     expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
-      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-2026-08-02/up',
-      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-total/up',
-      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-2026-08-02',
-      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-total',
+      'https://countapi.mileshilliard.com/api/v1/hit/libralightluda-painter-visitors-2026-08-02',
+      'https://countapi.mileshilliard.com/api/v1/hit/libralightluda-painter-visitors-total',
+      'https://countapi.mileshilliard.com/api/v1/get/libralightluda-painter-visitors-2026-08-02',
+      'https://countapi.mileshilliard.com/api/v1/get/libralightluda-painter-visitors-total',
     ])
   })
 
