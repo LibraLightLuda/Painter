@@ -34,8 +34,8 @@ async function readOrIncrementCounter(
   storage: Pick<Storage, 'getItem' | 'setItem'>,
 ): Promise<number> {
   const shouldIncrement = storage.getItem(marker) !== '1'
-  const action = shouldIncrement ? 'up/' : ''
-  const response = await fetcher(`${API_ROOT}/${encodeURIComponent(name)}/${action}`, {
+  const action = shouldIncrement ? '/up' : ''
+  const response = await fetcher(`${API_ROOT}/${encodeURIComponent(name)}${action}`, {
     headers: { Accept: 'application/json' },
     mode: 'cors',
   })

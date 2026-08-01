@@ -32,10 +32,10 @@ describe('visitor counter', () => {
     await expect(countVisitor({ fetcher, storage, now })).resolves.toEqual({ today: 7, total: 132 })
 
     expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
-      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-2026-08-02/up/',
-      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-total/up/',
-      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-2026-08-02/',
-      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-total/',
+      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-2026-08-02/up',
+      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-total/up',
+      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-2026-08-02',
+      'https://api.counterapi.dev/v1/libralightluda-painter/visitors-total',
     ])
   })
 
