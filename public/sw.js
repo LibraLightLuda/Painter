@@ -1,20 +1,25 @@
-const CACHE_NAME = 'fingertip-shell-v5'
+const CACHE_NAME = 'fingertip-shell-v6'
+const APP_BASE_PATH = new URL('./', self.registration.scope).pathname
+const appPath = (path = '') => `${APP_BASE_PATH}${path}`
+const APP_INDEX_PATH = appPath('index.html')
 const CORE_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/icon-maskable-512.png',
+  APP_BASE_PATH,
+  APP_INDEX_PATH,
+  appPath('manifest.webmanifest'),
+  appPath('icon-192.png'),
+  appPath('icon-512.png'),
+  appPath('icon-maskable-512.png'),
 ]
 
 async function precacheShell() {
   const cache = await caches.open(CACHE_NAME)
   await cache.addAll(CORE_ASSETS)
 
-  const page = await fetch('/index.html', { cache: 'no-store' })
+  const page = await fetch(APP_INDEX_PATH, { cache: 'no-store' })
   const html = await page.clone().text()
-  const urls = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1])
+  const urls = [...html.matchAll(/(?:src|href)="([^"]*assets\/[^"]+)"/g)].map(
+    (match) => new URL(match[1], self.registration.scope).pathname,
+  )
   if (urls.length) await cache.addAll([...new Set(urls)])
 }
 
@@ -63,7 +68,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
   if (url.origin !== self.location.origin) return
 
-  if (event.request.method === 'POST' && url.pathname === '/share-target') {
+  if (event.request.method === 'POST' && url.pathname === appPath('share-target')) {
     event.respondWith((async () => {
       try {
         const form = await event.request.formData()
@@ -72,7 +77,7 @@ self.addEventListener('fetch', (event) => {
       } catch {
         // The app opens with an actionable import error if the shared payload is unavailable.
       }
-      return Response.redirect('/?shared-image=1', 303)
+      return Response.redirect(`${APP_BASE_PATH}?shared-image=1`, 303)
     })())
     return
   }
@@ -82,13 +87,13 @@ self.addEventListener('fetch', (event) => {
   if (event.request.mode === 'navigate') {
     event.respondWith(
       (async () => {
-        const cachedPage = (await caches.match('/index.html')) || (await caches.match('/'))
+        const cachedPage = (await caches.match(APP_INDEX_PATH)) || (await caches.match(APP_BASE_PATH))
         if (cachedPage) {
           event.waitUntil(
             fetch(event.request)
               .then(async (response) => {
                 const cache = await caches.open(CACHE_NAME)
-                await cache.put('/index.html', response)
+                await cache.put(APP_INDEX_PATH, response)
               })
               .catch(() => undefined),
           )
@@ -97,7 +102,7 @@ self.addEventListener('fetch', (event) => {
         try {
           const response = await fetch(event.request)
           const copy = response.clone()
-          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy)))
+          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(APP_INDEX_PATH, copy)))
           return response
         } catch {
           return new Response('오프라인 앱 셸을 열 수 없습니다.', {

@@ -1,7 +1,10 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // Relative production paths work both at a custom domain and at
+  // https://<owner>.github.io/<repository>/ on GitHub Pages.
+  base: mode === 'production' ? './' : '/',
   plugins: [react()],
   build: {
     target: ['es2020', 'safari14'],
@@ -16,4 +19,4 @@ export default defineConfig({
       reporter: ['text', 'html'],
     },
   },
-})
+}))

@@ -21,7 +21,9 @@ export function registerPwa(onUpdateReady: (worker: ServiceWorker) => void): Pwa
     })
   }
 
-  void navigator.serviceWorker.register('/sw.js').then((result) => {
+  const baseUrl = new URL(import.meta.env.BASE_URL, window.location.href)
+  const serviceWorkerUrl = new URL('sw.js', baseUrl)
+  void navigator.serviceWorker.register(serviceWorkerUrl, { scope: baseUrl.pathname }).then((result) => {
     if (disposed) return
     registration = result
     if (result.waiting) onUpdateReady(result.waiting)
