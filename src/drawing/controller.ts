@@ -89,6 +89,7 @@ export class DrawingController {
   private gestureStartView: ViewTransform | null = null
   private interruptedStrokeId: string | null = null
   private frameId: number | null = null
+  private fullRenderRequested = false
   private settleTimer: number | null = null
   private disposed = false
   private autoFitView = true
@@ -473,7 +474,7 @@ export class DrawingController {
             points: [point],
           }
           this.clearPreview()
-          this.requestRender()
+          this.requestStrokeRender()
           break
         }
         case 'append-stroke': {
@@ -500,7 +501,7 @@ export class DrawingController {
               }
             }
           }
-          this.requestRender()
+          this.requestStrokeRender()
           break
         }
         case 'commit-stroke': {
@@ -579,28 +580,29 @@ export class DrawingController {
   private render(): void {
     this.frameId = null
     if (this.disposed) return
+    const fullRender = this.fullRenderRequested
+    this.fullRenderRequested = false
+    if (
+      !fullRender
+      && this.currentStroke
+      && this.currentStroke.tool !== 'fill'
+      && supportsIncrementalPreview(this.currentStroke)
+    ) {
+      this.renderStrokeDirectlyToDisplay(this.currentStroke)
+      return
+    }
+
     const previewContext = this.preview.getContext('2d')
     if (previewContext) {
+      previewContext.clearRect(0, 0, this.preview.width, this.preview.height)
       if (this.currentStroke && this.currentStroke.tool !== 'fill') {
         const layerOpacity = this.layers.find((layer) => layer.id === this.activeLayerId)?.opacity ?? 1
         const previewStroke = {
           ...this.currentStroke,
           opacity: this.currentStroke.opacity * layerOpacity,
         }
-        if (supportsIncrementalPreview(previewStroke)) {
-          this.previewBrushWidth = drawStrokeIncrement(
-            previewContext,
-            previewStroke,
-            this.previewRenderedPointCount,
-            this.documentBackground,
-            this.previewBrushWidth || previewStroke.size,
-          )
-          this.previewRenderedPointCount = previewStroke.points.length
-        } else {
-          previewContext.clearRect(0, 0, this.preview.width, this.preview.height)
-          drawStroke(previewContext, previewStroke, this.documentBackground)
-          this.previewRenderedPointCount = previewStroke.points.length
-        }
+        drawStroke(previewContext, previewStroke, this.documentBackground)
+        this.previewRenderedPointCount = previewStroke.points.length
       }
     }
     drawViewport(
@@ -619,7 +621,42 @@ export class DrawingController {
     )
   }
 
-  private requestRender(): void {
+  private renderStrokeDirectlyToDisplay(stroke: Stroke): void {
+    const context = this.canvas.getContext('2d')
+    if (!context) return
+    const layerOpacity = this.layers.find((layer) => layer.id === this.activeLayerId)?.opacity ?? 1
+    const previewStroke = { ...stroke, opacity: stroke.opacity * layerOpacity }
+    const pixelScale = this.dpr * this.view.scale
+
+    context.save()
+    context.setTransform(
+      pixelScale,
+      0,
+      0,
+      pixelScale,
+      this.dpr * this.view.offsetX,
+      this.dpr * this.view.offsetY,
+    )
+    context.beginPath()
+    context.rect(0, 0, this.documentWidth, this.documentHeight)
+    context.clip()
+    this.previewBrushWidth = drawStrokeIncrement(
+      context,
+      previewStroke,
+      this.previewRenderedPointCount,
+      this.documentBackground,
+      this.previewBrushWidth || previewStroke.size,
+    )
+    context.restore()
+    this.previewRenderedPointCount = previewStroke.points.length
+  }
+
+  private requestStrokeRender(): void {
+    this.requestRender(false)
+  }
+
+  private requestRender(full = true): void {
+    if (full) this.fullRenderRequested = true
     if (this.frameId === null) this.frameId = requestAnimationFrame(() => this.render())
   }
 

@@ -43,6 +43,48 @@ test('draws, saves, restores, undoes and exports the original canvas size', asyn
   if (process.env.VISUAL_QA === '1') await page.screenshot({ path: '.qa/mobile.png', fullPage: true })
 })
 
+test('renders freehand input without clearing the display canvas on every frame', async ({ page }) => {
+  await page.addInitScript(() => {
+    const trackedWindow = window as typeof window & { __displayCanvasClears: number }
+    trackedWindow.__displayCanvasClears = 0
+    const original = CanvasRenderingContext2D.prototype.clearRect
+    CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+      if (this.canvas.dataset.testid === 'drawing-canvas') trackedWindow.__displayCanvasClears += 1
+      return original.apply(this, args)
+    }
+  })
+  await page.goto('/')
+  const canvas = page.getByTestId('drawing-canvas')
+  const displayClears = await canvas.evaluate(async (element) => {
+    const trackedWindow = window as typeof window & { __displayCanvasClears: number }
+    const rect = element.getBoundingClientRect()
+    const dispatch = (type: string, x: number) => element.dispatchEvent(new PointerEvent(type, {
+      bubbles: true,
+      pointerId: 71,
+      pointerType: 'pen',
+      buttons: type === 'pointerup' ? 0 : 1,
+      pressure: 0.5,
+      clientX: rect.left + x,
+      clientY: rect.top + rect.height * 0.5,
+    }))
+    const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+    dispatch('pointerdown', rect.width * 0.2)
+    await nextFrame()
+    trackedWindow.__displayCanvasClears = 0
+    for (let index = 1; index <= 8; index += 1) {
+      dispatch('pointermove', rect.width * (0.2 + index * 0.06))
+      await nextFrame()
+    }
+    const count = trackedWindow.__displayCanvasClears
+    dispatch('pointerup', rect.width * 0.74)
+    return count
+  })
+
+  expect(displayClears).toBe(0)
+  await expect(page.getByTestId('undo-button')).toBeEnabled()
+})
+
 test('switches from a stroke to two-pointer view manipulation', async ({ page }) => {
   await page.goto('/')
   const canvas = page.getByTestId('drawing-canvas')
@@ -155,6 +197,22 @@ test('collapses mobile tools into a bookmark and refits the canvas', async ({ pa
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
   await expect(page.locator('.toolbar')).toBeVisible()
   await expect(page.getByTestId('tool-pencil')).toHaveAttribute('aria-pressed', 'true')
+  const brushControls = page.locator('.brush-controls')
+  const scrollState = await brushControls.evaluate((element) => {
+    const style = getComputedStyle(element)
+    element.scrollLeft = element.scrollWidth
+    return {
+      overflowX: style.overflowX,
+      scrollable: element.scrollWidth > element.clientWidth,
+      scrolled: element.scrollLeft > 0,
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      childWidths: [...element.children].map((child) => (child as HTMLElement).offsetWidth),
+    }
+  })
+  expect(scrollState.overflowX).toBe('auto')
+  expect(scrollState.scrollable, JSON.stringify(scrollState)).toBe(true)
+  expect(scrollState.scrolled).toBe(true)
 })
 
 test('creates, saves and restores a drawable multilingual outline word', async ({ page }) => {

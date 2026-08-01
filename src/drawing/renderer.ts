@@ -162,7 +162,29 @@ export function drawStrokeIncrement(
   context.lineCap = stroke.tool === 'marker' || stroke.tool === 'highlighter' ? 'square' : 'round'
   context.lineJoin = 'round'
 
-  if (stroke.tool === 'pen' || stroke.tool === 'pencil' || stroke.tool === 'eraser') {
+  if (canUseFastPenPath(stroke)) {
+    context.lineWidth = stroke.size * pointPressure(stroke.points[0], stroke)
+    if (renderedPointCount === 0) {
+      context.beginPath()
+      context.arc(
+        stroke.points[0].x,
+        stroke.points[0].y,
+        context.lineWidth / 2,
+        0,
+        Math.PI * 2,
+      )
+      context.fill()
+    }
+    const firstNewPoint = Math.max(1, renderedPointCount)
+    if (firstNewPoint < stroke.points.length) {
+      context.beginPath()
+      context.moveTo(stroke.points[firstNewPoint - 1].x, stroke.points[firstNewPoint - 1].y)
+      for (let index = firstNewPoint; index < stroke.points.length; index += 1) {
+        context.lineTo(stroke.points[index].x, stroke.points[index].y)
+      }
+      context.stroke()
+    }
+  } else if (stroke.tool === 'pen' || stroke.tool === 'pencil' || stroke.tool === 'eraser') {
     forEachDabRange(
       stroke,
       renderedPointCount,

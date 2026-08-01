@@ -327,6 +327,7 @@ input:focus-visible {
   border-top: 1px solid var(--line);
   background: var(--paper);
   box-shadow: 0 -6px 22px rgba(30, 31, 29, 0.06);
+  min-width: 0;
 }
 .tool-bookmark { display: none; }
 .toolbar {
@@ -335,9 +336,16 @@ input:focus-visible {
   justify-content: flex-start;
   gap: 4px;
   min-height: 61px;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   padding: 5px max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left));
   overflow-x: auto;
-  touch-action: manipulation;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
   scrollbar-width: none;
 }
 .toolbar::-webkit-scrollbar { display: none; }
@@ -357,6 +365,7 @@ input:focus-visible {
   border-radius: 13px;
   background: transparent;
   cursor: pointer;
+  scroll-snap-align: start;
 }
 .tool-button:hover:not(:disabled) { background: #eee9df; }
 .tool-button:disabled { opacity: 0.5; cursor: default; }
@@ -385,14 +394,25 @@ input:focus-visible {
 .brush-controls {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 18px;
   min-height: calc(58px + var(--safe-bottom));
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   padding: 7px max(12px, env(safe-area-inset-right)) var(--safe-bottom) max(12px, env(safe-area-inset-left));
   border-top: 1px solid #e5dfd4;
   background: #f0ebe1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
 }
-.color-controls { display: flex; align-items: center; gap: 8px; }
+.brush-controls::-webkit-scrollbar { display: none; }
+.color-controls { display: flex; align-items: center; gap: 8px; min-width: max-content; flex: none; scroll-snap-align: start; }
 .color-controls.is-disabled { opacity: 0.38; }
 .color-button,
 .custom-color {
@@ -462,6 +482,8 @@ input:focus-visible {
   min-width: min(42vw, 340px);
   color: #595850;
   font-size: 0.75rem;
+  flex: none;
+  scroll-snap-align: start;
 }
 .opacity-control {
   display: grid;
@@ -471,6 +493,8 @@ input:focus-visible {
   min-width: min(28vw, 220px);
   color: #595850;
   font-size: 0.75rem;
+  flex: none;
+  scroll-snap-align: start;
 }
 .opacity-control > span { white-space: nowrap; }
 .opacity-control strong { color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -855,19 +879,16 @@ input:focus-visible {
   .new-button { min-width: 44px; padding-inline: 9px; }
   .new-button span:last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
   .brush-controls {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: 34px 34px;
-    gap: 2px 10px;
-    justify-content: stretch;
-    min-height: calc(82px + var(--safe-bottom));
+    display: flex;
+    gap: 14px;
+    justify-content: flex-start;
+    min-height: calc(64px + var(--safe-bottom));
   }
   .color-controls { gap: 6px; }
   .color-button,
   .custom-color { width: 32px; height: 32px; }
-  .color-controls { grid-column: 1; grid-row: 1 / 3; }
-  .size-control { grid-column: 2; grid-row: 1; grid-template-columns: auto minmax(60px, 1fr) 25px; min-width: 0; }
-  .opacity-control { grid-column: 2; grid-row: 2; grid-template-columns: auto minmax(60px, 1fr); min-width: 0; }
+  .size-control { grid-template-columns: auto minmax(110px, 1fr) 25px; min-width: 240px; }
+  .opacity-control { grid-template-columns: auto minmax(100px, 1fr); min-width: 220px; }
   .sheet-backdrop { padding: env(safe-area-inset-top) 0 0; }
   .image-sheet { max-height: calc(100dvh - env(safe-area-inset-top)); padding: 15px; border-radius: 20px 20px 0 0; }
   .compact-sheet { width: 100%; max-height: calc(100dvh - env(safe-area-inset-top)); padding: 17px; border-radius: 20px 20px 0 0; }
@@ -888,9 +909,6 @@ input:focus-visible {
   .save-pill span:last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
   .brand-mark { width: 32px; height: 32px; }
   .tool-button { min-width: 47px; }
-  .color-button:nth-of-type(4),
-  .color-button:nth-of-type(5),
-  .color-button:nth-of-type(6) { display: none; }
   .brush-controls { padding-inline: 8px; }
   .size-control { gap: 6px; }
   .layer-order { flex-direction: column; }
