@@ -33,6 +33,7 @@ import {
   type StoredToolSettings,
 } from './preferences/toolSettings'
 import { createRandomWordGuide, WORD_LANGUAGE_LABELS } from './words/randomWord'
+import { countVisitor, isVisitorCounterHost, type VisitorCounts } from './visitors/counter'
 
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -133,6 +134,7 @@ export default function App() {
   const [drawingState, setDrawingState] = useState(initialDrawingState)
   const [ready, setReady] = useState(false)
   const [online, setOnline] = useState(navigator.onLine)
+  const [visitorCounts, setVisitorCounts] = useState<VisitorCounts | null>(null)
   const [notice, setNotice] = useState('')
   const [exporting, setExporting] = useState(false)
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
@@ -167,6 +169,19 @@ export default function App() {
   const projectFileRef = useRef<HTMLInputElement>(null)
   const zoomFeedbackTimerRef = useRef<number | null>(null)
   const toolDockTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!isVisitorCounterHost(window.location.hostname)) return
+    let active = true
+    void countVisitor()
+      .then((counts) => {
+        if (active) setVisitorCounts(counts)
+      })
+      .catch(() => {
+        // Drawing must remain fully usable if the optional counter service is unavailable.
+      })
+    return () => { active = false }
+  }, [])
 
   const refreshProjects = useCallback(async () => {
     const entries = await listRecentProjects()
@@ -705,6 +720,14 @@ export default function App() {
             />
           </label>
 
+          {visitorCounts && (
+            <aside className="visitor-counter" aria-label="방문객 통계" data-testid="visitor-counter">
+              <span>오늘 <strong>{visitorCounts.today.toLocaleString('ko-KR')}</strong></span>
+              <i aria-hidden="true" />
+              <span>전체 <strong>{visitorCounts.total.toLocaleString('ko-KR')}</strong></span>
+            </aside>
+          )}
+
           <button
             type="button"
             className={`save-pill save-${saveStatus}`}
@@ -735,7 +758,7 @@ export default function App() {
               type="button"
               className={`stroke-order-button ${drawingState.wordGuide.showStrokeOrder ? 'is-selected' : ''}`}
               onClick={handleToggleStrokeOrder}
-              aria-label="획순 가이드 표시"
+              aria-label={drawingState.wordGuide.showStrokeOrder ? '획순 가이드 숨기기' : '획순 가이드 표시'}
               aria-pressed={Boolean(drawingState.wordGuide.showStrokeOrder)}
               data-testid="stroke-order-button"
             >

@@ -238,6 +238,11 @@ test('creates, saves and restores a drawable multilingual outline word', async (
   await page.getByTestId('builtin-image-01-flower-teapot').click()
   await expect(page.getByTestId('undo-button')).toBeDisabled()
 
+  await page.evaluate(() => {
+    const randomValues = [0.26, 0.999]
+    let randomIndex = 0
+    Math.random = () => randomValues[randomIndex++] ?? 0.5
+  })
   await page.getByTestId('word-button').click()
   await expect(page.getByTestId('undo-button')).toBeDisabled()
   await expect(page.locator('.toast')).toContainText(/기존 그림을 모두 지우고 .*단어 .*를 만들었어요/)
@@ -280,8 +285,7 @@ test('creates, saves and restores a drawable multilingual outline word', async (
     } : undefined
   })
   const savedGuide = savedWordState?.wordGuide
-  expect(savedGuide?.language).toMatch(/^(en|ko|ja|zh)$/)
-  expect(savedGuide?.text.length).toBeGreaterThan(0)
+  expect(savedGuide).toMatchObject({ language: 'ko', text: '책상' })
   expect(savedGuide?.showStrokeOrder).toBe(true)
   expect(savedWordState).toMatchObject({
     doneCount: 0,

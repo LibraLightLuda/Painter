@@ -1,5 +1,5 @@
 import type { BackgroundImageState, DrawingLayer, ShapeTool, Stroke, ViewTransform, WordGuide } from './types'
-import { circledStepNumber, createWritingSteps } from '../words/strokeOrder'
+import { circledStepNumber, createHangulSyllableGuides, createWritingSteps } from '../words/strokeOrder'
 
 export function clearCanvas(canvas: HTMLCanvasElement): void {
   const context = canvas.getContext('2d')
@@ -582,6 +582,83 @@ const wordFontFamilies: Record<WordGuide['language'], string> = {
   zh: '"PingFang SC", "Microsoft YaHei", sans-serif',
 }
 
+function compactStrokeLabel(label: string): string {
+  return label
+    .replaceAll('맨 위', '맨위')
+    .replaceAll('오른쪽', '오른')
+    .replaceAll('왼쪽', '왼')
+    .replaceAll('가운데', '중간')
+    .replaceAll('짧은', '짧')
+    .replaceAll('긴', '긴')
+    .replaceAll('가로', '')
+    .replaceAll('세로', '')
+    .replaceAll('사선', '')
+    .replaceAll('를 ', '')
+    .replaceAll(' ', '')
+}
+
+function drawHangulStrokePanel(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  text: string,
+  family: string,
+): void {
+  const syllables = createHangulSyllableGuides(text)
+  if (!syllables.length) return
+  const panelX = width * 0.055
+  const panelY = height * 0.705
+  const panelWidth = width * 0.89
+  const panelHeight = height * 0.255
+  const headerHeight = panelHeight * 0.19
+  const cardWidth = panelWidth / syllables.length
+
+  context.fillStyle = 'rgba(239, 244, 240, 0.94)'
+  context.fillRect(panelX, panelY, panelWidth, panelHeight)
+  context.strokeStyle = 'rgba(57, 88, 74, 0.28)'
+  context.lineWidth = Math.max(2, width * 0.002)
+  context.strokeRect(panelX, panelY, panelWidth, panelHeight)
+  context.textAlign = 'left'
+  context.textBaseline = 'middle'
+  context.fillStyle = 'rgba(44, 70, 58, 0.78)'
+  context.font = `700 ${Math.max(13, Math.min(20, width * 0.018))}px ${family}`
+  context.fillText('글자 → 자모 → 획순  ·  숫자는 순서, 화살표는 쓰는 방향', panelX + 14, panelY + headerHeight / 2, panelWidth - 28)
+
+  for (let syllableIndex = 0; syllableIndex < syllables.length; syllableIndex += 1) {
+    const syllable = syllables[syllableIndex]
+    const cardX = panelX + cardWidth * syllableIndex
+    if (syllableIndex > 0) {
+      context.beginPath()
+      context.moveTo(cardX, panelY + headerHeight)
+      context.lineTo(cardX, panelY + panelHeight)
+      context.strokeStyle = 'rgba(57, 88, 74, 0.20)'
+      context.stroke()
+    }
+
+    const horizontalPadding = Math.max(7, Math.min(14, cardWidth * 0.045))
+    const contentX = cardX + horizontalPadding
+    const contentWidth = cardWidth - horizontalPadding * 2
+    const titleY = panelY + headerHeight + panelHeight * 0.105
+    context.fillStyle = 'rgba(40, 65, 54, 0.96)'
+    context.font = `800 ${Math.max(17, Math.min(27, cardWidth * 0.09))}px ${family}`
+    const componentOrder = syllable.components.map((component) => component.jamo).join(' → ')
+    context.fillText(`${circledStepNumber(syllableIndex)} ${syllable.character}  ${componentOrder}`, contentX, titleY, contentWidth)
+
+    const firstRowY = titleY + panelHeight * 0.155
+    const rowGap = panelHeight * 0.145
+    context.font = `700 ${Math.max(11, Math.min(18, cardWidth * 0.047))}px ${family}`
+    for (let componentIndex = 0; componentIndex < syllable.components.length; componentIndex += 1) {
+      const component = syllable.components[componentIndex]
+      const expanded = component.parts.length > 1 ? `${component.jamo}=${component.parts.join('+')}` : component.jamo
+      const strokes = component.strokes
+        .map((stroke) => `${circledStepNumber(stroke.order - 1)}${compactStrokeLabel(stroke.label)}${stroke.direction}`)
+        .join(' ')
+      context.fillStyle = componentIndex === 0 ? '#9a472f' : 'rgba(44, 70, 58, 0.86)'
+      context.fillText(`${component.role} ${expanded}  ${strokes}`, contentX, firstRowY + rowGap * componentIndex, contentWidth)
+    }
+  }
+}
+
 export function drawWordGuide(
   context: CanvasRenderingContext2D,
   width: number,
@@ -638,18 +715,19 @@ export function drawWordGuide(
       context.fillText(String(index + 1), centerX, badgeY + 0.5)
     }
 
-    const guideText = steps.map((step, index) => {
-      const detail = guide.language === 'ko' ? ` ${step.components.join('→')}` : ` ${step.character}`
-      return `${circledStepNumber(index)}${detail}`
-    }).join('   ')
-    let guideSize = Math.min(28, Math.max(15, low * 0.065))
-    context.font = `700 ${guideSize}px ${family}`
-    while (guideSize > 12 && context.measureText(guideText).width > maximumWidth) {
-      guideSize -= 1
+    if (guide.language === 'ko') {
+      drawHangulStrokePanel(context, width, height, guide.text, family)
+    } else {
+      const guideText = steps.map((step, index) => `${circledStepNumber(index)} ${step.character}`).join('   ')
+      let guideSize = Math.min(28, Math.max(15, low * 0.065))
       context.font = `700 ${guideSize}px ${family}`
+      while (guideSize > 12 && context.measureText(guideText).width > maximumWidth) {
+        guideSize -= 1
+        context.font = `700 ${guideSize}px ${family}`
+      }
+      context.fillStyle = 'rgba(44, 70, 58, 0.78)'
+      context.fillText(guideText, width / 2, Math.min(height * 0.88, height / 2 + low * 0.64), maximumWidth)
     }
-    context.fillStyle = 'rgba(44, 70, 58, 0.78)'
-    context.fillText(guideText, width / 2, Math.min(height * 0.88, height / 2 + low * 0.64), maximumWidth)
   }
   context.restore()
 }
