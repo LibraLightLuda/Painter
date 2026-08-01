@@ -82,7 +82,10 @@ test('switches brushes, changes size, zooms and starts a clean drawing', async (
   await page.getByTestId('tool-marker').click()
   await expect(page.getByTestId('tool-marker')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('brush-size').fill('42')
+  await page.getByTestId('brush-opacity').fill('37')
+  await page.getByRole('button', { name: '색상 #d64b3c' }).click()
   await expect(page.getByText('42 px')).toBeVisible()
+  await expect(page.getByText('37%')).toBeVisible()
 
   const box = await canvas.boundingBox()
   if (!box) throw new Error('Canvas has no bounding box')
@@ -121,6 +124,37 @@ test('switches brushes, changes size, zooms and starts a clean drawing', async (
   await expect(page.getByRole('button', { name: '기기에 저장됨' })).toBeVisible()
   await page.reload()
   await expect(page.getByTestId('undo-button')).toBeDisabled()
+  await expect(page.getByTestId('tool-marker')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('brush-size')).toHaveValue('42')
+  await expect(page.getByTestId('brush-opacity')).toHaveValue('37')
+  await expect(page.getByRole('button', { name: '색상 #d64b3c' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('migrates legacy tool preferences before the mobile UI becomes interactive', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.removeItem('fingertip-tool-settings-v2')
+    localStorage.setItem('fingertip-tool-settings-v1', JSON.stringify({
+      brush: { tool: 'marker', color: '#d64b3c' },
+      sizes: { marker: 48 },
+      opacities: { marker: 0.43 },
+      details: { marker: { flow: 0.62, hardness: 0.71, stabilization: 0.44 } },
+    }))
+  })
+  await page.goto('/')
+
+  await expect(page.getByTestId('tool-marker')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('brush-size')).toHaveValue('48')
+  await expect(page.getByTestId('brush-opacity')).toHaveValue('43')
+  await expect(page.getByRole('button', { name: '색상 #d64b3c' })).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForFunction(() => Boolean(localStorage.getItem('fingertip-tool-settings-v2')))
+  const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('fingertip-tool-settings-v2') ?? '{}'))
+  expect(migrated).toMatchObject({
+    version: 2,
+    brush: { tool: 'marker', color: '#d64b3c' },
+    sizes: { marker: 48 },
+    opacities: { marker: 0.43 },
+    details: { marker: { flow: 0.62, hardness: 0.71, stabilization: 0.44 } },
+  })
 })
 
 test('eraser removes artwork instead of painting with white', async ({ page }) => {
@@ -248,7 +282,8 @@ test('stores advanced brush settings and pointer pressure samples', async ({ pag
   })
   await expect(page.getByText('기기에 저장됨')).toBeVisible({ timeout: 7_000 })
   const saved = await page.evaluate(async () => {
-    const settings = JSON.parse(localStorage.getItem('fingertip-tool-settings-v1') ?? '{}')
+    const settings = JSON.parse(localStorage.getItem('fingertip-tool-settings-v2') ?? '{}')
+    const legacySettings = JSON.parse(localStorage.getItem('fingertip-tool-settings-v1') ?? '{}')
     const request = indexedDB.open('fingertip-drawing')
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result)
@@ -262,11 +297,25 @@ test('stores advanced brush settings and pointer pressure samples', async ({ pag
     })
     database.close()
     const stroke = revisions.filter((revision) => revision.status === 'complete').at(-1)?.payload.history.done.at(-1)
-    return { details: settings.details?.pen, pressures: stroke?.points.map((point) => point.pressure ?? 0) }
+    return {
+      version: settings.version,
+      details: settings.details?.pen,
+      legacyDetails: legacySettings.details?.pen,
+      pressures: stroke?.points.map((point) => point.pressure ?? 0),
+    }
   })
+  expect(saved.version).toBe(2)
   expect(saved.details).toMatchObject({ stabilization: 0.72, flow: 0.64, hardness: 0.58, spacing: 0.18 })
+  expect(saved.legacyDetails).toMatchObject({ stabilization: 0.72, flow: 0.64, hardness: 0.58, spacing: 0.18 })
   expect(saved.pressures?.[0] ?? 0).toBeCloseTo(0.2)
   expect(Math.max(...(saved.pressures ?? [0]))).toBeGreaterThan(0.2)
+
+  await page.reload()
+  await page.getByTestId('brush-settings-button').click()
+  await expect(page.getByTestId('brush-stabilization')).toHaveValue('72')
+  await expect(page.getByTestId('brush-flow')).toHaveValue('64')
+  await expect(page.getByTestId('brush-hardness')).toHaveValue('58')
+  await expect(page.getByTestId('brush-spacing')).toHaveValue('18')
 })
 
 test('fills regions, draws filled shapes and picks a canvas color', async ({ page }) => {

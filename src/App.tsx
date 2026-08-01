@@ -11,7 +11,6 @@ import {
   createEmptySnapshot,
   DEFAULT_PROJECT_ID,
   type BackgroundImageState,
-  type BrushSettings,
   type BrushTool,
   type SaveStatus,
 } from './drawing/types'
@@ -27,6 +26,12 @@ import {
 import { applyWaitingUpdate, registerPwa } from './pwa/register'
 import type { PreparedImage } from './images/importImage'
 import { takeSharedImage } from './images/shareTarget'
+import {
+  readStoredToolSettings,
+  writeStoredToolSettings,
+  type StoredToolDetails,
+  type StoredToolSettings,
+} from './preferences/toolSettings'
 
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -76,20 +81,9 @@ const toolMeta: Record<BrushTool, ToolPreset> = {
 }
 
 const colors = ['#1e1f1d', '#246bce', '#d64b3c', '#21845b', '#ee762f']
-const TOOL_SETTINGS_KEY = 'fingertip-tool-settings-v1'
-
 type ToolNumberMap = Record<BrushTool, number>
-type ToolDetails = Pick<BrushSettings, 'flow' | 'hardness' | 'spacing' | 'stabilization' | 'pressure' | 'shapeFill' | 'tolerance'>
+type ToolDetails = StoredToolDetails
 type ToolDetailsMap = Record<BrushTool, ToolDetails>
-
-interface StoredToolSettings {
-  brush?: { tool?: BrushTool; color?: string }
-  sizes?: Partial<ToolNumberMap>
-  opacities?: Partial<ToolNumberMap>
-  recentColors?: string[]
-  favoriteColors?: string[]
-  details?: Partial<Record<BrushTool, Partial<ToolDetails>>>
-}
 
 function defaultToolNumbers(key: 'size' | 'opacity'): ToolNumberMap {
   return Object.fromEntries(
@@ -119,14 +113,6 @@ function mergeToolDetails(stored?: StoredToolSettings['details']): ToolDetailsMa
   return defaults
 }
 
-function readToolSettings(): StoredToolSettings {
-  try {
-    return JSON.parse(localStorage.getItem(TOOL_SETTINGS_KEY) ?? '{}') as StoredToolSettings
-  } catch {
-    return {}
-  }
-}
-
 const statusText: Record<SaveStatus, string> = {
   loading: '작업 여는 중',
   unsaved: '변경됨',
@@ -136,7 +122,7 @@ const statusText: Record<SaveStatus, string> = {
 }
 
 export default function App() {
-  const storedToolsRef = useRef<StoredToolSettings>(readToolSettings())
+  const storedToolsRef = useRef<StoredToolSettings>(readStoredToolSettings())
   const controllerRef = useRef<DrawingController | null>(null)
   const autosaveRef = useRef<AutosaveCoordinator | null>(null)
   const titleRef = useRef('새 그림')
@@ -246,27 +232,26 @@ export default function App() {
   )
 
   useEffect(() => {
+    if (!ready) return
     try {
-      localStorage.setItem(
-        TOOL_SETTINGS_KEY,
-        JSON.stringify({
-          brush: { tool: drawingState.brush.tool, color: drawingState.brush.color },
-          sizes: toolSizes,
-          opacities: toolOpacities,
-          recentColors,
-          favoriteColors,
-          details: toolDetails,
-        } satisfies StoredToolSettings),
-      )
+      writeStoredToolSettings({
+        brush: { tool: drawingState.brush.tool, color: drawingState.brush.color },
+        sizes: toolSizes,
+        opacities: toolOpacities,
+        recentColors,
+        favoriteColors,
+        details: toolDetails,
+      })
     } catch {
       // Drawing remains available when browser settings storage is restricted.
     }
-  }, [drawingState.brush.color, drawingState.brush.tool, favoriteColors, recentColors, toolDetails, toolOpacities, toolSizes])
+  }, [drawingState.brush.color, drawingState.brush.tool, favoriteColors, ready, recentColors, toolDetails, toolOpacities, toolSizes])
 
   useEffect(() => {
+    if (!ready) return
     const color = drawingState.brush.color
     setRecentColors((current) => current[0] === color ? current : [color, ...current.filter((item) => item !== color)].slice(0, 12))
-  }, [drawingState.brush.color])
+  }, [drawingState.brush.color, ready])
 
   useEffect(() => {
     const onVisibility = () => {
