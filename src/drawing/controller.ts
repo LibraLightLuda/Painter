@@ -11,10 +11,13 @@ import {
   canvasToBlob,
   clearCanvas,
   drawStroke,
+  drawStrokeIncrement,
   drawViewport,
   renderFullCanvas,
   replayStrokes,
+  supportsIncrementalPreview,
 } from './renderer'
+import { getCanvasPerformanceProfile } from './performanceProfile'
 import {
   PROJECT_SCHEMA_VERSION,
   type BackgroundImageState,
@@ -28,6 +31,7 @@ import {
   type WordGuide,
 } from './types'
 import { normalizeWordGuide } from '../words/randomWord'
+import { decodeImageBlob } from '../images/decodeImage'
 
 export interface DrawingState {
   canUndo: boolean
@@ -53,17 +57,6 @@ interface DrawingControllerOptions {
   onChange: (change: DrawingChange) => void
 }
 
-function uniquePoints(points: Point[]): Point[] {
-  const result: Point[] = []
-  for (const point of points) {
-    const previous = result.at(-1)
-    if (!previous || previous.x !== point.x || previous.y !== point.y || previous.time !== point.time) {
-      result.push(point)
-    }
-  }
-  return result
-}
-
 function stabilizedPoint(previous: Point, next: Point, amount: number): Point {
   const strength = Math.min(0.92, Math.max(0, amount) * 0.92)
   const ratio = 1 - strength
@@ -84,11 +77,15 @@ export class DrawingController {
   private readonly input = new InputMachine()
   private readonly committed = document.createElement('canvas')
   private readonly preview = document.createElement('canvas')
+  private readonly performanceProfile = getCanvasPerformanceProfile()
   private view: ViewTransform = { scale: 1, offsetX: 0, offsetY: 0 }
   private viewportWidth = 0
   private viewportHeight = 0
   private dpr = 1
   private currentStroke: Stroke | null = null
+  private previewRenderedPointCount = 0
+  private previewBrushWidth = 0
+  private pointerOrigin: { left: number; top: number } | null = null
   private gestureStartView: ViewTransform | null = null
   private interruptedStrokeId: string | null = null
   private frameId: number | null = null
@@ -115,6 +112,7 @@ export class DrawingController {
   private previousDrawingTool: BrushSettings['tool'] = 'pen'
   private backgroundAsset: Blob | null = null
   private backgroundImage: CanvasImageSource | null = null
+  private backgroundImageRelease: (() => void) | null = null
   private backgroundImageState: BackgroundImageState | undefined
   private wordGuide: WordGuide | undefined
   private layers: DrawingLayer[] = [
@@ -136,7 +134,9 @@ export class DrawingController {
     } catch {
       // Pointer capture is an optimization; lifecycle recovery still handles failure.
     }
-    this.process(this.input.pointerDown(this.eventPoint(event)))
+    const rect = this.canvas.getBoundingClientRect()
+    this.pointerOrigin = { left: rect.left, top: rect.top }
+    this.process(this.input.pointerDown(this.eventPoint(event, this.pointerOrigin)))
   }
 
   private readonly onPointerMove = (event: PointerEvent) => {
@@ -144,14 +144,17 @@ export class DrawingController {
     event.preventDefault()
     const coalesced = event.getCoalescedEvents?.()
     const samples = coalesced?.length ? coalesced : [event]
-    const points = samples.map((sample) => this.eventPoint(sample))
+    const origin = this.pointerOrigin ?? this.canvas.getBoundingClientRect()
+    const points = samples.map((sample) => this.eventPoint(sample, origin))
     this.process(this.input.pointerMove(event.pointerId, points))
   }
 
   private readonly onPointerUp = (event: PointerEvent) => {
     if (!this.input.hasPointer(event.pointerId)) return
     event.preventDefault()
-    this.process(this.input.pointerUp(this.eventPoint(event)))
+    const origin = this.pointerOrigin ?? this.canvas.getBoundingClientRect()
+    this.process(this.input.pointerUp(this.eventPoint(event, origin)))
+    if (this.input.mode === 'settling') this.pointerOrigin = null
     try {
       this.canvas.releasePointerCapture(event.pointerId)
     } catch {
@@ -163,10 +166,14 @@ export class DrawingController {
     if (!this.input.hasPointer(event.pointerId)) return
     event.preventDefault()
     this.process(this.input.cancel())
+    this.pointerOrigin = null
   }
 
   private readonly onLostPointerCapture = (event: PointerEvent) => {
-    if (this.input.hasPointer(event.pointerId)) this.process(this.input.cancel())
+    if (this.input.hasPointer(event.pointerId)) {
+      this.process(this.input.cancel())
+      this.pointerOrigin = null
+    }
   }
 
   private readonly onContextMenu = (event: MouseEvent) => event.preventDefault()
@@ -189,6 +196,7 @@ export class DrawingController {
     this.documentWidth = options.width
     this.documentHeight = options.height
     this.documentBackground = options.background
+    document.documentElement.classList.toggle('performance-lite', this.performanceProfile.reducedEffects)
     this.configureDocument(options.width, options.height, options.background)
     this.attach()
   }
@@ -209,9 +217,11 @@ export class DrawingController {
     const oldHeight = this.viewportHeight
     this.viewportWidth = width
     this.viewportHeight = height
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2)
-    this.canvas.width = Math.max(1, Math.round(width * this.dpr))
-    this.canvas.height = Math.max(1, Math.round(height * this.dpr))
+    this.dpr = Math.min(window.devicePixelRatio || 1, this.performanceProfile.maxPixelRatio)
+    const pixelWidth = Math.max(1, Math.round(width * this.dpr))
+    const pixelHeight = Math.max(1, Math.round(height * this.dpr))
+    if (this.canvas.width !== pixelWidth) this.canvas.width = pixelWidth
+    if (this.canvas.height !== pixelHeight) this.canvas.height = pixelHeight
 
     if (!oldWidth || !oldHeight || this.autoFitView) {
       this.view = fitTransform(
@@ -427,8 +437,7 @@ export class DrawingController {
     )
   }
 
-  private eventPoint(event: PointerEvent): ScreenPoint {
-    const rect = this.canvas.getBoundingClientRect()
+  private eventPoint(event: PointerEvent, rect: Pick<DOMRect, 'left' | 'top'>): ScreenPoint {
     return {
       pointerId: event.pointerId,
       pointerType: event.pointerType,
@@ -463,6 +472,7 @@ export class DrawingController {
             layerId: this.activeLayerId,
             points: [point],
           }
+          this.clearPreview()
           this.requestRender()
           break
         }
@@ -477,12 +487,18 @@ export class DrawingController {
           ) {
             this.currentStroke.points = [this.currentStroke.points[0], next.at(-1)!]
           } else {
-            const stabilized = [...this.currentStroke.points]
+            const stabilized = this.currentStroke.points
             for (const point of next) {
               const previous = stabilized.at(-1)!
-              stabilized.push(stabilizedPoint(previous, point, this.currentStroke.stabilization ?? 0))
+              const candidate = stabilizedPoint(previous, point, this.currentStroke.stabilization ?? 0)
+              if (
+                candidate.x !== previous.x
+                || candidate.y !== previous.y
+                || candidate.pressure !== previous.pressure
+              ) {
+                stabilized.push(candidate)
+              }
             }
-            this.currentStroke.points = uniquePoints(stabilized)
           }
           this.requestRender()
           break
@@ -535,10 +551,16 @@ export class DrawingController {
   private commitStroke(): string | null {
     const stroke = this.currentStroke
     this.currentStroke = null
-    clearCanvas(this.preview)
+    this.clearPreview()
     if (!stroke || stroke.points.length === 0) return null
     this.history.add(stroke)
-    this.replayLayers()
+    if (this.canAppendToCommitted(stroke)) {
+      const context = this.committed.getContext('2d', { alpha: true })
+      if (context) drawStroke(context, stroke)
+      else this.replayLayers()
+    } else {
+      this.replayLayers()
+    }
     this.requestRender()
     this.emit('content')
     return stroke.id
@@ -559,14 +581,26 @@ export class DrawingController {
     if (this.disposed) return
     const previewContext = this.preview.getContext('2d')
     if (previewContext) {
-      previewContext.clearRect(0, 0, this.preview.width, this.preview.height)
       if (this.currentStroke && this.currentStroke.tool !== 'fill') {
         const layerOpacity = this.layers.find((layer) => layer.id === this.activeLayerId)?.opacity ?? 1
-        drawStroke(
-          previewContext,
-          { ...this.currentStroke, opacity: this.currentStroke.opacity * layerOpacity },
-          this.documentBackground,
-        )
+        const previewStroke = {
+          ...this.currentStroke,
+          opacity: this.currentStroke.opacity * layerOpacity,
+        }
+        if (supportsIncrementalPreview(previewStroke)) {
+          this.previewBrushWidth = drawStrokeIncrement(
+            previewContext,
+            previewStroke,
+            this.previewRenderedPointCount,
+            this.documentBackground,
+            this.previewBrushWidth || previewStroke.size,
+          )
+          this.previewRenderedPointCount = previewStroke.points.length
+        } else {
+          previewContext.clearRect(0, 0, this.preview.width, this.preview.height)
+          drawStroke(previewContext, previewStroke, this.documentBackground)
+          this.previewRenderedPointCount = previewStroke.points.length
+        }
       }
     }
     drawViewport(
@@ -579,6 +613,9 @@ export class DrawingController {
       this.backgroundImage,
       this.backgroundImageState,
       this.wordGuide,
+      !this.performanceProfile.reducedEffects
+        && this.currentStroke === null
+        && this.input.mode !== 'gesture',
     )
   }
 
@@ -675,6 +712,18 @@ export class DrawingController {
     replayStrokes(this.committed, this.history.getStrokes(), this.layers)
   }
 
+  private canAppendToCommitted(stroke: Stroke): boolean {
+    if (this.layers.length !== 1) return false
+    const layer = this.layers[0]
+    return layer.visible && layer.opacity === 1 && (stroke.layerId ?? layer.id) === layer.id
+  }
+
+  private clearPreview(): void {
+    clearCanvas(this.preview)
+    this.previewRenderedPointCount = 0
+    this.previewBrushWidth = 0
+  }
+
   private configureDocument(width: number, height: number, background: string): void {
     this.documentWidth = width
     this.documentHeight = height
@@ -683,6 +732,8 @@ export class DrawingController {
     if (this.committed.height !== height) this.committed.height = height
     if (this.preview.width !== width) this.preview.width = width
     if (this.preview.height !== height) this.preview.height = height
+    this.previewRenderedPointCount = 0
+    this.previewBrushWidth = 0
   }
 
   private async replaceBackgroundImage(
@@ -690,29 +741,19 @@ export class DrawingController {
     state?: BackgroundImageState,
   ): Promise<void> {
     this.releaseBackgroundImage()
-    this.backgroundAsset = blob
-    this.backgroundImageState = blob && state ? { ...state } : undefined
+    this.backgroundAsset = null
+    this.backgroundImageState = undefined
     if (!blob || !state) return
-    if ('createImageBitmap' in window) {
-      this.backgroundImage = await createImageBitmap(blob, { imageOrientation: 'from-image' })
-      return
-    }
-    const url = URL.createObjectURL(blob)
-    try {
-      const image = new Image()
-      image.decoding = 'async'
-      image.src = url
-      await image.decode()
-      this.backgroundImage = image
-    } finally {
-      URL.revokeObjectURL(url)
-    }
+    const decoded = await decodeImageBlob(blob)
+    this.backgroundAsset = blob
+    this.backgroundImageState = { ...state }
+    this.backgroundImage = decoded.source
+    this.backgroundImageRelease = decoded.release
   }
 
   private releaseBackgroundImage(): void {
-    if (typeof ImageBitmap !== 'undefined' && this.backgroundImage instanceof ImageBitmap) {
-      this.backgroundImage.close()
-    }
+    this.backgroundImageRelease?.()
+    this.backgroundImageRelease = null
     this.backgroundImage = null
   }
 

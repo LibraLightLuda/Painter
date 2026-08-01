@@ -55,10 +55,21 @@ function forEachDab(
   stroke: Stroke,
   callback: (x: number, y: number, pressure: number) => void,
 ): void {
+  forEachDabRange(stroke, 0, callback)
+}
+
+function forEachDabRange(
+  stroke: Stroke,
+  renderedPointCount: number,
+  callback: (x: number, y: number, pressure: number) => void,
+): void {
   const points = stroke.points
+  if (points.length === 0 || renderedPointCount >= points.length) return
   const step = Math.max(0.6, stroke.size * Math.min(1, Math.max(0.04, stroke.spacing ?? 0.12)))
-  callback(points[0].x, points[0].y, pointPressure(points[0], stroke))
-  for (let index = 1; index < points.length; index += 1) {
+  if (renderedPointCount === 0) {
+    callback(points[0].x, points[0].y, pointPressure(points[0], stroke))
+  }
+  for (let index = Math.max(1, renderedPointCount); index < points.length; index += 1) {
     const previous = points[index - 1]
     const point = points[index]
     const distance = Math.hypot(point.x - previous.x, point.y - previous.y)
@@ -101,6 +112,101 @@ function drawDab(
 
 function drawDabStroke(context: CanvasRenderingContext2D, stroke: Stroke, color: string): void {
   forEachDab(stroke, (x, y, pressure) => drawDab(context, stroke, x, y, pressure, color))
+}
+
+function hasNearlyConstantPressure(stroke: Stroke): boolean {
+  const first = pointPressure(stroke.points[0], stroke)
+  for (let index = 1; index < stroke.points.length; index += 1) {
+    if (Math.abs(pointPressure(stroke.points[index], stroke) - first) > 0.015) return false
+  }
+  return true
+}
+
+function canUseFastPenPath(stroke: Stroke): boolean {
+  return (stroke.tool === 'pen' || stroke.tool === 'eraser')
+    && (stroke.hardness ?? 0.9) >= 0.9
+    && (stroke.spacing ?? 0.12) <= 0.15
+    && hasNearlyConstantPressure(stroke)
+}
+
+export function supportsIncrementalPreview(stroke: Stroke): boolean {
+  return stroke.tool === 'pen'
+    || stroke.tool === 'pencil'
+    || stroke.tool === 'eraser'
+    || stroke.tool === 'brush'
+    || stroke.tool === 'marker'
+    || stroke.tool === 'highlighter'
+}
+
+export function drawStrokeIncrement(
+  context: CanvasRenderingContext2D,
+  stroke: Stroke,
+  renderedPointCount: number,
+  eraserPreviewColor?: string,
+  variableBrushWidth = stroke.size,
+): number {
+  if (!supportsIncrementalPreview(stroke) || renderedPointCount >= stroke.points.length) {
+    return variableBrushWidth
+  }
+
+  context.save()
+  context.globalAlpha = stroke.opacity * (stroke.flow ?? 1)
+  if (stroke.tool === 'eraser' && !eraserPreviewColor) {
+    context.globalCompositeOperation = 'destination-out'
+    context.globalAlpha = 1
+  }
+  const color = stroke.tool === 'eraser' ? (eraserPreviewColor ?? '#000000') : stroke.color
+  context.strokeStyle = color
+  context.fillStyle = color
+  context.lineWidth = stroke.size
+  context.lineCap = stroke.tool === 'marker' || stroke.tool === 'highlighter' ? 'square' : 'round'
+  context.lineJoin = 'round'
+
+  if (stroke.tool === 'pen' || stroke.tool === 'pencil' || stroke.tool === 'eraser') {
+    forEachDabRange(
+      stroke,
+      renderedPointCount,
+      (x, y, pressure) => drawDab(context, stroke, x, y, pressure, color),
+    )
+  } else if (stroke.tool === 'brush') {
+    context.shadowColor = color
+    context.shadowBlur = stroke.size * (1 - (stroke.hardness ?? 0.75)) * 0.25
+    if (renderedPointCount === 0 && stroke.points.length === 1) {
+      context.beginPath()
+      context.arc(stroke.points[0].x, stroke.points[0].y, stroke.size * 0.55, 0, Math.PI * 2)
+      context.fill()
+    }
+    for (let index = Math.max(1, renderedPointCount); index < stroke.points.length; index += 1) {
+      const previous = stroke.points[index - 1]
+      const point = stroke.points[index]
+      const elapsed = Math.max(1, point.time - previous.time)
+      const speed = Math.hypot(point.x - previous.x, point.y - previous.y) / elapsed
+      const target = stroke.size * pointPressure(point, stroke)
+        * Math.min(1.2, Math.max(0.45, 1.2 - speed * 0.7))
+      variableBrushWidth = variableBrushWidth * 0.72 + target * 0.28
+      context.lineWidth = variableBrushWidth
+      context.beginPath()
+      context.moveTo(previous.x, previous.y)
+      context.lineTo(point.x, point.y)
+      context.stroke()
+    }
+  } else {
+    if (renderedPointCount === 0 && stroke.points.length === 1) {
+      context.beginPath()
+      context.arc(stroke.points[0].x, stroke.points[0].y, stroke.size / 2, 0, Math.PI * 2)
+      context.fill()
+    }
+    for (let index = Math.max(1, renderedPointCount); index < stroke.points.length; index += 1) {
+      const previous = stroke.points[index - 1]
+      const point = stroke.points[index]
+      context.beginPath()
+      context.moveTo(previous.x, previous.y)
+      context.lineTo(point.x, point.y)
+      context.stroke()
+    }
+  }
+  context.restore()
+  return variableBrushWidth
 }
 
 function isShapeTool(tool: Stroke['tool']): tool is ShapeTool {
@@ -335,7 +441,19 @@ export function drawStroke(
   }
 
   if (stroke.tool === 'pen' || stroke.tool === 'pencil' || stroke.tool === 'eraser') {
-    drawDabStroke(context, stroke, color)
+    if (canUseFastPenPath(stroke)) {
+      context.lineWidth = stroke.size * pointPressure(points[0], stroke)
+      if (points.length === 1) {
+        context.beginPath()
+        context.arc(points[0].x, points[0].y, context.lineWidth / 2, 0, Math.PI * 2)
+        context.fill()
+      } else {
+        strokePath(context, points)
+        context.stroke()
+      }
+    } else {
+      drawDabStroke(context, stroke, color)
+    }
     if (stroke.tool === 'pencil') {
       const random = seededRandom(stroke.seed ?? 1)
       context.globalAlpha *= 0.24
@@ -482,6 +600,7 @@ export function drawViewport(
   backgroundImage?: CanvasImageSource | null,
   backgroundImageState?: BackgroundImageState,
   wordGuide?: WordGuide,
+  showShadow = true,
 ): void {
   const context = display.getContext('2d')
   if (!context) return
@@ -493,9 +612,9 @@ export function drawViewport(
   context.save()
   context.translate(view.offsetX, view.offsetY)
   context.scale(view.scale, view.scale)
-  context.shadowColor = 'rgba(25, 27, 24, 0.20)'
-  context.shadowBlur = 22 / view.scale
-  context.shadowOffsetY = 8 / view.scale
+  context.shadowColor = showShadow ? 'rgba(25, 27, 24, 0.20)' : 'transparent'
+  context.shadowBlur = showShadow ? 22 / view.scale : 0
+  context.shadowOffsetY = showShadow ? 8 / view.scale : 0
   context.fillStyle = background
   context.fillRect(0, 0, committed.width, committed.height)
   if (backgroundImage && backgroundImageState) {

@@ -1,3 +1,5 @@
+import { decodeImageBlob, type DecodedImage } from './decodeImage'
+
 export interface PreparedImage {
   blob: Blob
   width: number
@@ -5,42 +7,6 @@ export interface PreparedImage {
   originalWidth: number
   originalHeight: number
   optimized: boolean
-}
-
-interface DecodedImage {
-  source: CanvasImageSource
-  width: number
-  height: number
-  release: () => void
-}
-
-async function decodeImage(blob: Blob): Promise<DecodedImage> {
-  if ('createImageBitmap' in window) {
-    const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' })
-    return {
-      source: bitmap,
-      width: bitmap.width,
-      height: bitmap.height,
-      release: () => bitmap.close(),
-    }
-  }
-
-  const url = URL.createObjectURL(blob)
-  const image = new Image()
-  image.decoding = 'async'
-  image.src = url
-  try {
-    await image.decode()
-  } catch (error) {
-    URL.revokeObjectURL(url)
-    throw error
-  }
-  return {
-    source: image,
-    width: image.naturalWidth,
-    height: image.naturalHeight,
-    release: () => URL.revokeObjectURL(url),
-  }
 }
 
 function canvasBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
@@ -64,7 +30,7 @@ export async function prepareImage(
 
   let decoded: DecodedImage
   try {
-    decoded = await decodeImage(blob)
+    decoded = await decodeImageBlob(blob)
   } catch {
     throw new Error('이 이미지를 열 수 없어요. PNG 또는 JPEG로 바꾼 뒤 다시 시도해 주세요.')
   }

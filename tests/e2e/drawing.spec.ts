@@ -358,6 +358,21 @@ test('loads a built-in coloring image directly onto the canvas', async ({ page }
   expect(linePixels).toBeGreaterThan(2_000)
 })
 
+test('loads a built-in image when WebKit createImageBitmap rejects the blob', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'createImageBitmap', {
+      configurable: true,
+      value: () => Promise.reject(new TypeError('Simulated WebKit 15 ImageBitmap failure')),
+    })
+  })
+  await page.goto('/')
+  await page.getByTestId('image-import-button').click()
+  await page.getByTestId('builtin-image-01-flower-teapot').click()
+
+  await expect(page.locator('.image-sheet')).toBeHidden()
+  await expect(page.locator('.toast')).toHaveClass(/is-visible/)
+})
+
 test('creates layers and manages multiple saved projects', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('layers-button').click()

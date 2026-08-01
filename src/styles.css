@@ -225,6 +225,17 @@ input:focus-visible {
   -webkit-user-select: none;
   cursor: crosshair;
 }
+
+/* WebKit 15 pays a noticeable compositing cost for live backdrop blurs while
+   a full-screen canvas is changing. The controller enables this lightweight
+   profile only for older iOS or low-core devices. */
+.performance-lite .canvas-hint,
+.performance-lite .zoom-controls,
+.performance-lite .tool-bookmark,
+.performance-lite .sheet-backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 .canvas-hint {
   position: absolute;
   left: 50%;
