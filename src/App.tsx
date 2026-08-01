@@ -453,10 +453,28 @@ export default function App() {
     scheduleToolDockCollapse(2_800)
   }
 
-  const handleRandomWord = () => {
+  const handleRandomWord = async () => {
+    const controller = controllerRef.current
+    if (!controller) return
     const guide = createRandomWordGuide()
-    controllerRef.current?.setWordGuide(guide)
-    announce(`${WORD_LANGUAGE_LABELS[guide.language]} 단어 “${guide.text}”를 만들었어요. 윤곽선을 따라 그려 보세요.`)
+    const current = controller.serialize(titleRef.current)
+    const clean = createEmptySnapshot(Date.now(), current.id)
+    clean.title = current.title
+    clean.width = current.width
+    clean.height = current.height
+    clean.view = {
+      scale: 1,
+      centerX: current.width / 2,
+      centerY: current.height / 2,
+    }
+    clean.wordGuide = guide
+    controller.startNew(clean)
+    const saved = await autosaveRef.current?.flush()
+    announce(
+      saved === false
+        ? `기존 그림을 모두 지우고 ${WORD_LANGUAGE_LABELS[guide.language]} 단어 “${guide.text}”를 만들었어요. 기기 저장은 잠시 후 다시 시도합니다.`
+        : `기존 그림을 모두 지우고 ${WORD_LANGUAGE_LABELS[guide.language]} 단어 “${guide.text}”를 만들었어요. 윤곽선을 따라 그려 보세요.`,
+    )
   }
 
   const handleNewDrawing = async () => {
@@ -697,7 +715,7 @@ export default function App() {
           <button
             type="button"
             className="word-button"
-            onClick={handleRandomWord}
+            onClick={() => void handleRandomWord()}
             disabled={!ready}
             aria-label={drawingState.wordGuide ? `새 랜덤 단어 만들기, 현재 ${drawingState.wordGuide.text}` : '랜덤 단어 만들기'}
             data-testid="word-button"

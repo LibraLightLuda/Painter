@@ -159,29 +159,64 @@ test('collapses mobile tools into a bookmark and refits the canvas', async ({ pa
 
 test('creates, saves and restores a drawable multilingual outline word', async ({ page }) => {
   await page.goto('/')
+  const initialCanvas = page.getByTestId('drawing-canvas')
+  const initialBox = await initialCanvas.boundingBox()
+  if (!initialBox) throw new Error('Canvas has no bounding box before word creation')
+  await page.mouse.move(initialBox.x + initialBox.width * 0.42, initialBox.y + initialBox.height * 0.44)
+  await page.mouse.down()
+  await page.mouse.move(initialBox.x + initialBox.width * 0.58, initialBox.y + initialBox.height * 0.56, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.getByTestId('undo-button')).toBeEnabled()
+  await page.getByTestId('image-import-button').click()
+  await page.getByTestId('builtin-image-01-flower-teapot').click()
+
   await page.getByTestId('word-button').click()
-  await expect(page.locator('.toast')).toContainText(/단어 .*를 만들었어요/)
+  await expect(page.getByTestId('undo-button')).toBeDisabled()
+  await expect(page.locator('.toast')).toContainText(/기존 그림을 모두 지우고 .*단어 .*를 만들었어요/)
   await expect(page.getByText('기기에 저장됨')).toBeVisible({ timeout: 7_000 })
 
-  const savedGuide = await page.evaluate(async () => {
+  const savedWordState = await page.evaluate(async () => {
     const request = indexedDB.open('fingertip-drawing')
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })
     const transaction = database.transaction('revisions', 'readonly')
-    const revisions = await new Promise<Array<{ status: string; createdAt: number; payload: { wordGuide?: { language: string; text: string } } }>>((resolve, reject) => {
+    const revisions = await new Promise<Array<{
+      status: string
+      createdAt: number
+      backgroundAsset?: Blob
+      payload: {
+        backgroundImage?: unknown
+        history: { done: unknown[]; undone: unknown[] }
+        wordGuide?: { language: string; text: string }
+      }
+    }>>((resolve, reject) => {
       const getAll = transaction.objectStore('revisions').getAll()
       getAll.onsuccess = () => resolve(getAll.result)
       getAll.onerror = () => reject(getAll.error)
     })
     database.close()
-    return revisions
+    const latest = revisions
       .filter((revision) => revision.status === 'complete')
-      .sort((left, right) => right.createdAt - left.createdAt)[0]?.payload.wordGuide
+      .sort((left, right) => right.createdAt - left.createdAt)[0]
+    return latest ? {
+      wordGuide: latest.payload.wordGuide,
+      doneCount: latest.payload.history.done.length,
+      undoneCount: latest.payload.history.undone.length,
+      hasBackgroundImage: Boolean(latest.payload.backgroundImage),
+      hasBackgroundAsset: Boolean(latest.backgroundAsset),
+    } : undefined
   })
+  const savedGuide = savedWordState?.wordGuide
   expect(savedGuide?.language).toMatch(/^(en|ko|ja|zh)$/)
   expect(savedGuide?.text.length).toBeGreaterThan(0)
+  expect(savedWordState).toMatchObject({
+    doneCount: 0,
+    undoneCount: 0,
+    hasBackgroundImage: false,
+    hasBackgroundAsset: false,
+  })
 
   const downloadPromise = page.waitForEvent('download')
   await page.getByTestId('export-button').click()
