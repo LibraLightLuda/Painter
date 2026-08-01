@@ -297,6 +297,32 @@ test('imports a local image, restores it and exports JPEG options', async ({ pag
   expect([...bytes.subarray(0, 2)]).toEqual([0xff, 0xd8])
 })
 
+test('loads a built-in coloring image directly onto the canvas', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('word-button').click()
+  await page.getByTestId('image-import-button').click()
+  await expect(page.getByRole('heading', { name: '내장 이미지에서 선택' })).toBeVisible()
+  expect(await page.locator('[data-testid^="builtin-image-"]').count()).toBeGreaterThanOrEqual(13)
+  await page.getByTestId('builtin-image-01-flower-teapot').click()
+  await expect(page.getByRole('heading', { name: '이미지 가져오기' })).toBeHidden()
+  await expect(page.locator('.toast')).toContainText('이미지를 배경으로 놓았어요.')
+
+  await page.reload()
+  await expect(page.getByTestId('word-button')).toHaveAttribute('aria-label', '랜덤 단어 만들기')
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByTestId('export-button').click()
+  await page.getByRole('button', { name: 'PNG 만들기' }).click()
+  const download = await downloadPromise
+  const path = await download.path()
+  if (!path) throw new Error('Built-in coloring image export path is unavailable')
+  const image = PNG.sync.read(await import('node:fs').then(({ readFileSync }) => readFileSync(path)))
+  let linePixels = 0
+  for (let offset = 0; offset < image.data.length; offset += 4) {
+    if (image.data[offset] < 80 && image.data[offset + 1] < 80 && image.data[offset + 2] < 80) linePixels += 1
+  }
+  expect(linePixels).toBeGreaterThan(2_000)
+})
+
 test('creates layers and manages multiple saved projects', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('layers-button').click()

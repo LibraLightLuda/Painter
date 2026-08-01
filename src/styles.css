@@ -598,6 +598,50 @@ input:focus-visible {
 .sheet-header { justify-content: space-between; margin-bottom: 14px; }
 .sheet-header h2 { margin: 2px 0 0; font-size: 1.25rem; }
 .eyebrow { color: #9b4b35; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; }
+.builtin-images {
+  padding: 13px;
+  border: 1px solid #cfc8bb;
+  border-radius: 17px;
+  background: #f1ece2;
+}
+.builtin-images-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.builtin-images-heading h3 { margin: 2px 0 0; font-size: 1rem; }
+.builtin-images-heading small { color: var(--muted); font-size: 0.68rem; text-align: right; }
+.builtin-image-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(118px, 1fr);
+  gap: 9px;
+  overflow-x: auto;
+  padding: 2px 2px 7px;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: inline proximity;
+}
+.builtin-image-grid button {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px;
+  color: var(--ink);
+  font-size: 0.73rem;
+  font-weight: 720;
+  text-align: left;
+  border: 1px solid #d1c9bc;
+  border-radius: 12px;
+  background: white;
+  cursor: pointer;
+  scroll-snap-align: start;
+  touch-action: manipulation;
+}
+.builtin-image-grid button:hover:not(:disabled) { border-color: #8b9f93; box-shadow: 0 4px 13px rgba(30, 31, 29, 0.1); }
+.builtin-image-grid button:disabled { opacity: 0.55; cursor: wait; }
+.builtin-image-grid img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 8px; background: white; }
+.builtin-image-grid span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.builtin-empty { margin: 0; padding: 18px; color: var(--muted); text-align: center; border: 1px dashed #c9c0b2; border-radius: 12px; }
+.import-divider { display: flex; align-items: center; gap: 9px; margin: 14px 0; color: var(--muted); font-size: 0.68rem; font-weight: 700; }
+.import-divider::before,
+.import-divider::after { content: ""; height: 1px; flex: 1; background: #d9d1c4; }
 .sheet-close {
   width: 44px;
   height: 44px;

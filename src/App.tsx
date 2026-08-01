@@ -552,6 +552,7 @@ export default function App() {
     image: PreparedImage,
     mode: BackgroundImageState['mode'],
     rotation: BackgroundImageState['rotation'],
+    source: 'external' | 'builtin' = 'external',
   ) => {
     const controller = controllerRef.current
     if (!controller) return
@@ -561,7 +562,7 @@ export default function App() {
       height: image.height,
       mode,
       rotation,
-    })
+    }, source === 'builtin')
     autosaveRef.current?.markDirty()
     await autosaveRef.current?.flush()
     setIncomingImage(null)

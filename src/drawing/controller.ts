@@ -372,8 +372,9 @@ export class DrawingController {
     return canvasToBlob(this.renderOutput(scale), type, quality)
   }
 
-  async setBackgroundImage(blob: Blob, state: BackgroundImageState): Promise<void> {
+  async setBackgroundImage(blob: Blob, state: BackgroundImageState, clearWordGuide = false): Promise<void> {
     this.cancelActive()
+    if (clearWordGuide) this.wordGuide = undefined
     await this.replaceBackgroundImage(blob, state)
     this.requestRender()
     this.emit('content')

@@ -6,12 +6,18 @@ import {
   readClipboardImage,
   type PreparedImage,
 } from '../images/importImage'
+import { builtinImages, type BuiltinImage } from '../images/builtinImages'
 
 interface ImageImportSheetProps {
   open: boolean
   incomingBlob: Blob | null
   onClose: () => void
-  onImport: (image: PreparedImage, mode: BackgroundImageState['mode'], rotation: BackgroundImageState['rotation']) => Promise<void>
+  onImport: (
+    image: PreparedImage,
+    mode: BackgroundImageState['mode'],
+    rotation: BackgroundImageState['rotation'],
+    source?: 'external' | 'builtin',
+  ) => Promise<void>
 }
 
 export function ImageImportSheet({
@@ -89,6 +95,22 @@ export function ImageImportSheet({
     }
   }
 
+  const chooseBuiltin = async (item: BuiltinImage) => {
+    setBusy(true)
+    setError('')
+    try {
+      const response = await fetch(item.url)
+      if (!response.ok) throw new Error(`내장 이미지를 받지 못했습니다 (${response.status}).`)
+      const prepared = await prepareImage(await response.blob())
+      await onImport(prepared, 'fit', 0, 'builtin')
+      onClose()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '내장 이미지를 불러오지 못했습니다.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const confirm = async () => {
     if (!image || busy) return
     setBusy(true)
@@ -113,6 +135,37 @@ export function ImageImportSheet({
           </div>
           <button type="button" className="sheet-close" onClick={onClose} aria-label="이미지 가져오기 닫기">×</button>
         </header>
+
+        <section className="builtin-images" aria-labelledby="builtin-images-title">
+          <div className="builtin-images-heading">
+            <div>
+              <span className="eyebrow">색칠공부</span>
+              <h3 id="builtin-images-title">내장 이미지에서 선택</h3>
+            </div>
+            <small>선택하면 캔버스에 바로 열립니다.</small>
+          </div>
+          {builtinImages.length ? (
+            <div className="builtin-image-grid">
+              {builtinImages.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => void chooseBuiltin(item)}
+                  disabled={busy}
+                  aria-label={`색칠공부 이미지 ${item.title} 불러오기`}
+                  data-testid={`builtin-image-${item.id}`}
+                >
+                  <img src={item.thumbnailUrl} alt="" loading="lazy" decoding="async" fetchPriority="low" />
+                  <span>{item.title}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="builtin-empty">sampleImg 폴더에 이미지를 추가하면 여기에 표시됩니다.</p>
+          )}
+        </section>
+
+        <div className="import-divider"><span>또는 내 이미지 사용</span></div>
 
         <div className="import-actions">
           <button type="button" className="import-primary" onClick={() => fileRef.current?.click()} disabled={busy}>
