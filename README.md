@@ -22,7 +22,7 @@
 
 도구 설정은 브라우저/설치 앱의 로컬 저장소에 기기별로 보관한다. 같은 주소의 앱을 정상적으로 업데이트해도 유지되지만, 사이트 데이터 삭제·비공개 모드 종료·다른 기기로의 이동에는 자동 동기화되지 않는다. 이전 `v1` 설정은 첫 실행에서 `v2`로 자동 이전한다.
 
-공개 주소는 대소문자를 구분하는 [https://libralightluda.github.io/Painter/](https://libralightluda.github.io/Painter/)이다. iPad Safari에서 과거 404가 계속 보이면 주소의 `Painter` 대문자를 확인하고, 새 개인 정보 보호 탭에서 열거나 Safari의 해당 사이트 데이터를 지운 뒤 다시 접속한다.
+기본 공개 주소는 대소문자를 구분하는 [https://libralightluda.github.io/Painter/](https://libralightluda.github.io/Painter/)이다. iOS 15 계열의 GitHub Pages 프로젝트 경로 404에 대비해 계정 루트 [https://libralightluda.github.io/](https://libralightluda.github.io/)도 같은 앱으로 연결하며, 별도 저장소가 최신 Painter 빌드를 매시간 동기화한다.
 
 ## 실행 방법
 

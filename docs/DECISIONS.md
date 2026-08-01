@@ -132,3 +132,9 @@
 - 확인: iPad Safari 17.6과 Android 사용자 에이전트 모두 정확한 `/Painter/`에서 HTTP 200을 받았다. `/painter/`는 GitHub Pages 프로젝트 경로의 대소문자 구분 때문에 404다.
 - 결정: canonical 주소를 `/Painter/`로 고정하고 `.nojekyll` 및 프로젝트 하위 잘못된 경로를 정식 주소로 돌리는 `404.html`을 배포한다. Apple 웹 앱 메타데이터도 명시한다.
 - 제한: Pages 활성화 전 응답을 Safari가 보존했거나 사용자가 소문자 경로를 저장한 경우 브라우저 사이트 데이터 삭제 또는 새 개인 정보 보호 탭이 필요할 수 있다. 프로젝트 바깥의 `/painter/` 응답은 이 저장소의 404 페이지가 제어할 수 없다.
+
+## D-018: iOS 15용 계정 루트 Pages 호환 배포
+
+- 확인: iOS 15.8.8 Safari·Chrome 사용자 에이전트와 GitHub Pages IPv4 엣지 네 곳에서 `/Painter/`는 모두 200이지만, 계정 루트는 GitHub 기본 404였다. GitHub 상태 페이지에는 Pages 장애가 없었다.
+- 결정: `LibraLightLuda/LibraLightLuda.github.io` 사용자 사이트를 추가하고 최신 Painter 프로덕션 빌드를 계정 루트의 `/Painter/`에도 배치한다. 루트 `/`는 `/Painter/`로 이동하며 매시간 자동 동기화한다.
+- 이유: 앱 코드가 실행되기 전에 발생하는 GitHub 호스트·프로젝트 경로 404는 서비스 워커나 React 라우팅으로 복구할 수 없다. 사용자 사이트를 활성화하면 구형 iOS가 프로젝트 사이트를 잘못 판정하는 경우에도 동일 호스트에 정적 파일 폴백이 존재한다.
