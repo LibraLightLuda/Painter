@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Production and test output
+dist/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Tool caches and local QA artifacts
+.vite/
+.vitest/
+.cache/
+.qa/
+.docx-qa/
+*.tsbuildinfo
+vite.config.ts.timestamp-*
+
+# Local development server state
+.fingertip-server.pid
+.fingertip-server.log
+.fingertip-server-error.log
+*.log
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+~$*
